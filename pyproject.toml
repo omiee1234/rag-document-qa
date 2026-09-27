@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "ragqa"
 version = "0.1.0"
 description = "RAG document Q&A with a measured retrieval evaluation harness"
+license = "MIT"
 requires-python = ">=3.10"
 dependencies = [
     "fastapi",
