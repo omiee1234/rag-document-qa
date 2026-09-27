@@ -1,0 +1,33 @@
+[
+  {"question": "How many days of PTO do full-time employees accrue per year?", "correct_chunk_ids": ["leave_policy::0"]},
+  {"question": "How many days in advance must I submit a PTO request longer than 2 days?", "correct_chunk_ids": ["leave_policy::0"]},
+  {"question": "How many unused PTO days can I carry over to next year?", "correct_chunk_ids": ["leave_policy::0"]},
+
+  {"question": "How many days per week can I work remotely without VP approval?", "correct_chunk_ids": ["remote_work_policy::0"]},
+  {"question": "What is the home office stipend for remote workers?", "correct_chunk_ids": ["remote_work_policy::0"]},
+  {"question": "What are the core hours remote employees must be reachable during?", "correct_chunk_ids": ["remote_work_policy::0"]},
+
+  {"question": "How quickly are expenses under $75 reimbursed?", "correct_chunk_ids": ["expense_policy::0"]},
+  {"question": "What is the daily meal reimbursement limit during business travel?", "correct_chunk_ids": ["expense_policy::0"]},
+  {"question": "Within how many days must an expense report be submitted?", "correct_chunk_ids": ["expense_policy::0"]},
+
+  {"question": "How should harassment be reported at this company?", "correct_chunk_ids": ["code_of_conduct::0"]},
+  {"question": "What must employees disclose regarding outside employment?", "correct_chunk_ids": ["code_of_conduct::0"]},
+  {"question": "What happens if an employee violates the code of conduct?", "correct_chunk_ids": ["code_of_conduct::0"]},
+
+  {"question": "How long is the new employee onboarding program?", "correct_chunk_ids": ["onboarding_policy::0"]},
+  {"question": "Within how many days must new hires complete compliance training?", "correct_chunk_ids": ["onboarding_policy::0"]},
+  {"question": "When is the check-in with the hiring manager and HR for new hires?", "correct_chunk_ids": ["onboarding_policy::0"]},
+
+  {"question": "What is the minimum password length required for company systems?", "correct_chunk_ids": ["security_policy::0"]},
+  {"question": "Within how many hours must a suspected security incident be reported?", "correct_chunk_ids": ["security_policy::0"]},
+  {"question": "Are USB storage devices allowed on company laptops?", "correct_chunk_ids": ["security_policy::0"]},
+
+  {"question": "How many weeks of paid parental leave are employees eligible for?", "correct_chunk_ids": ["parental_leave_policy::0"]},
+  {"question": "How far in advance should employees notify HR before parental leave?", "correct_chunk_ids": ["parental_leave_policy::0"]},
+  {"question": "Do employees keep health benefits during parental leave?", "correct_chunk_ids": ["parental_leave_policy::0"]},
+
+  {"question": "How much notice is expected when an employee resigns voluntarily?", "correct_chunk_ids": ["termination_policy::0"]},
+  {"question": "What happens to IT access on an employee's last day?", "correct_chunk_ids": ["termination_policy::0"]},
+  {"question": "When are final paychecks issued after termination?", "correct_chunk_ids": ["termination_policy::0"]}
+]

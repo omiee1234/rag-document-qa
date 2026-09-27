@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+pydantic
+pypdf
+scikit-learn
+numpy
+pytest
+
+# optional, only needed for milestone 4 (real embeddings) / LLM answer generation
+# sentence-transformers
+# openai

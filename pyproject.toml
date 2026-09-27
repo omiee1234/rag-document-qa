@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ragqa"
+version = "0.1.0"
+description = "RAG document Q&A with a measured retrieval evaluation harness"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "pypdf",
+    "scikit-learn",
+    "numpy",
+]
+
+[project.optional-dependencies]
+sentence-transformers = ["sentence-transformers"]
+openai = ["openai"]
+ui = ["streamlit"]
+dev = ["pytest"]
+
+[project.scripts]
+ragqa = "ragqa.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
