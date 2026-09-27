@@ -1,5 +1,7 @@
 # RAG Document Q&A with a Measured Evaluation Harness
 
+[![tests](https://github.com/omiee1234/rag-document-qa/actions/workflows/tests.yml/badge.svg)](https://github.com/omiee1234/rag-document-qa/actions/workflows/tests.yml)
+
 Upload policy documents, ask natural-language questions, get answers with
 citations to the exact source chunk — and, unlike most RAG demos, a
 harness that actually *measures* whether the retrieval and the answers are
@@ -59,7 +61,10 @@ pip install -e .
 Optional extras:
 ```bash
 pip install -e ".[sentence-transformers]"   # real dense embeddings
-pip install -e ".[openai]"                   # LLM-generated answers instead of extractive
+pip install -e ".[openai]"                  # LLM-generated answers instead of extractive
+pip install -e ".[ui]"                      # Streamlit demo app
+pip install -e ".[dev]"                     # pytest
+pip install -e ".[screenshots]"             # playwright, for scripts/capture_screenshots.py
 ```
 
 ## Usage
