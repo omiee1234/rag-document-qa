@@ -20,7 +20,7 @@ dependencies = [
 sentence-transformers = ["sentence-transformers"]
 openai = ["openai"]
 ui = ["streamlit"]
-dev = ["pytest"]
+dev = ["pytest", "playwright"]
 
 [project.scripts]
 ragqa = "ragqa.cli:main"

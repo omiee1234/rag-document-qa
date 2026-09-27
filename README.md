@@ -98,11 +98,15 @@ streamlit run src/ragqa/ui.py
 # opens at http://localhost:8501
 ```
 
-Two tabs:
-- **Ask a question** — a question box, the grounded answer, and expandable
-  cited chunks with their similarity scores
-- **Evaluation results** — one button, then Recall@3/Precision@3/MRR/
-  Faithfulness as metric tiles plus a per-question results table
+**Ask a question** — a question box, the grounded answer, and expandable
+cited chunks with their similarity scores:
+
+![Ask a question tab](docs/screenshots/ask.png)
+
+**Evaluation results** — one button, then Recall@3/Precision@3/MRR/
+Faithfulness as metric tiles plus a per-question results table:
+
+![Evaluation results tab](docs/screenshots/eval.png)
 
 ## Docker
 
