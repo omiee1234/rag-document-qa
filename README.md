@@ -118,28 +118,39 @@ to serve as soon as it starts.
 
 ## Evaluation results
 
-Measured against the 24-question labeled set in `data/eval/qa_set.json`
-(top-k = 3):
+Measured against the 50-question labeled set in `data/eval/qa_set.json`,
+against 18 documents (top-k = 3). The corpus deliberately includes
+near-duplicate policies across regions/teams (leave policy variants for
+US/UK/India, remote-work variants for engineering/sales, etc.) that share
+heavy vocabulary, plus a handful of paraphrased questions that avoid the
+source document's literal wording:
 
 | Embedding | Recall@3 | Precision@3 | MRR | Faithfulness |
 |---|---|---|---|---|
-| TF-IDF (baseline) | 1.00 | 0.33 | 1.00 | 1.00 |
-| sentence-transformers (`all-MiniLM-L6-v2`) | 1.00 | 0.33 | 0.97 | 1.00 |
+| TF-IDF (baseline) | 0.98 | 0.33 | 0.93 | 1.00 |
+| sentence-transformers (`all-MiniLM-L6-v2`) | 0.98 | 0.33 | 0.96 | 1.00 |
 
-**Honest caveat:** the bundled sample corpus is 8 documents on clearly
-distinct topics (leave, remote work, expenses, conduct, onboarding,
-security, parental leave, termination), so both embedders saturate at
-near-perfect retrieval — there's no ambiguity for either to fail on.
+**What actually happened, question by question:**
+
+- TF-IDF missed *"How much vacation time do I get if I'm based in
+  London?"* — the correct chunk (`leave_policy_uk::0`) never mentions
+  "vacation" or "London," only "leave" and "UK," so the literal
+  bag-of-words match failed and it retrieved unrelated policies instead.
+  This is the textbook vocabulary-mismatch failure mode of lexical
+  retrieval.
+- sentence-transformers, in turn, missed a very literal question —
+  *"Within how many hours must a suspected security incident be
+  reported?"* — retrieving onboarding/remote-work chunks instead of the
+  security policy. Dense embeddings aren't strictly better; they trade
+  one failure mode for a different one.
+
+This is the actual point of building an eval harness instead of eyeballing
+a demo: the aggregate numbers alone (0.98 vs 0.98 recall) would suggest
+"no difference," but the *specific failures* reveal a real, defensible
+trade-off — TF-IDF is vulnerable to paraphrasing, dense embeddings aren't
+immune to short, keyword-heavy technical questions on a small corpus.
 Precision@3 is capped at 0.33 by construction: each document is a single
 chunk, so 1 correct chunk out of top-3 retrieved is the ceiling.
-
-This is the expected result for a small, well-separated corpus, and it's
-also exactly the harness's value: it *tells you* when a comparison isn't
-discriminating, instead of hiding it behind a demo that "looks right." To
-see a real gap between TF-IDF and dense embeddings, grow the corpus to
-50+ documents with overlapping vocabulary (e.g. multiple similarly-worded
-policies, or real messy source material) — TF-IDF degrades on lexical
-ambiguity and synonymy in a way dense embeddings don't.
 
 ## Project layout
 

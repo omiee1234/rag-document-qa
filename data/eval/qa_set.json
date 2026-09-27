@@ -29,5 +29,42 @@
 
   {"question": "How much notice is expected when an employee resigns voluntarily?", "correct_chunk_ids": ["termination_policy::0"]},
   {"question": "What happens to IT access on an employee's last day?", "correct_chunk_ids": ["termination_policy::0"]},
-  {"question": "When are final paychecks issued after termination?", "correct_chunk_ids": ["termination_policy::0"]}
+  {"question": "When are final paychecks issued after termination?", "correct_chunk_ids": ["termination_policy::0"]},
+
+  {"question": "How many total days off do UK employees get including bank holidays?", "correct_chunk_ids": ["leave_policy_uk::0"]},
+  {"question": "How far in advance must UK employees book leave?", "correct_chunk_ids": ["leave_policy_uk::0"]},
+
+  {"question": "How many earned leave days do India-based employees receive per year?", "correct_chunk_ids": ["leave_policy_india::0"]},
+  {"question": "Can earned leave be carried over in India, and up to how many days?", "correct_chunk_ids": ["leave_policy_india::0"]},
+
+  {"question": "Can engineering employees work fully remote?", "correct_chunk_ids": ["remote_work_policy_engineering::0"]},
+  {"question": "How many hours must engineers overlap with their team's core collaboration window?", "correct_chunk_ids": ["remote_work_policy_engineering::0"]},
+
+  {"question": "How many days per week must sales employees be in the office or with clients?", "correct_chunk_ids": ["remote_work_policy_sales::0"]},
+  {"question": "Are fully remote arrangements generally available for sales roles?", "correct_chunk_ids": ["remote_work_policy_sales::0"]},
+
+  {"question": "What is the daily per diem for international travel?", "correct_chunk_ids": ["expense_policy_travel::0"]},
+  {"question": "How far in advance should international travel be booked?", "correct_chunk_ids": ["expense_policy_travel::0"]},
+
+  {"question": "What system must a personal phone be enrolled in to access company email?", "correct_chunk_ids": ["security_policy_byod::0"]},
+  {"question": "Does a BYOD remote wipe affect personal data on the device?", "correct_chunk_ids": ["security_policy_byod::0"]},
+
+  {"question": "How long is contractor onboarding compared to full-time employees?", "correct_chunk_ids": ["onboarding_policy_contractor::0"]},
+  {"question": "Do contractors go through the standard 90-day check-in?", "correct_chunk_ids": ["onboarding_policy_contractor::0"]},
+
+  {"question": "What must employees avoid sharing on personal social media?", "correct_chunk_ids": ["code_of_conduct_social_media::0"]},
+  {"question": "Do employees need to make clear their social media opinions are their own?", "correct_chunk_ids": ["code_of_conduct_social_media::0"]},
+
+  {"question": "When does the 12-month leave window start for an adopted child?", "correct_chunk_ids": ["parental_leave_policy_adoption::0"]},
+  {"question": "Is the 30-day parental leave notice period mandatory for adoption placements?", "correct_chunk_ids": ["parental_leave_policy_adoption::0"]},
+
+  {"question": "How is severance pay calculated for a layoff?", "correct_chunk_ids": ["termination_policy_layoff::0"]},
+  {"question": "Do laid-off employees need to give advance notice?", "correct_chunk_ids": ["termination_policy_layoff::0"]},
+
+  {"question": "How much vacation time do I get if I'm based in London?", "correct_chunk_ids": ["leave_policy_uk::0"]},
+  {"question": "What's the work-from-home policy like for developers?", "correct_chunk_ids": ["remote_work_policy_engineering::0"]},
+  {"question": "Do salespeople get to skip coming into the office?", "correct_chunk_ids": ["remote_work_policy_sales::0"]},
+  {"question": "How much extra do I get paid per day for food when traveling abroad?", "correct_chunk_ids": ["expense_policy_travel::0"]},
+  {"question": "What happens to my work data if I lose my personal phone?", "correct_chunk_ids": ["security_policy_byod::0"]},
+  {"question": "How much severance would I get if I got laid off after a few years?", "correct_chunk_ids": ["termination_policy_layoff::0"]}
 ]
