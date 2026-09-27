@@ -5,9 +5,6 @@ Free and local -- no external services, no API key required (uses the
 extractive fallback in generate.py unless OPENAI_API_KEY is set).
 """
 
-import json
-import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -27,12 +24,26 @@ st.set_page_config(page_title="RAG Document Q&A", page_icon="📄", layout="cent
 st.title("📄 RAG Document Q&A")
 st.caption("Ask a question about the ingested documents. Answers are grounded and cited.")
 
-if not DEFAULT_INDEX.exists():
-    st.warning(
-        f"No index found at `{DEFAULT_INDEX}`. Run this first:\n\n"
-        f"`ragqa ingest --docs data/docs --index index.pkl --embedder tfidf`"
-    )
-    st.stop()
+
+@st.cache_resource(show_spinner="Building index from data/docs (first run only)...")
+def ensure_index() -> None:
+    """Build the index on first run if it isn't already on disk.
+
+    index.pkl is a build artifact (gitignored, not shipped in the repo) --
+    a pickled sklearn/numpy object isn't safe to commit and unpickle across
+    different environments (e.g. local Windows dev vs. Streamlit Cloud's
+    Linux runtime with possibly different package versions). Rebuilding
+    fresh from data/docs on first run is cheap (TF-IDF, ~20 short docs)
+    and avoids that whole class of failure. st.cache_resource makes this
+    run only once per app instance, not on every rerun.
+    """
+    if not DEFAULT_INDEX.exists():
+        from ragqa.ingest import ingest
+
+        ingest(str(DEFAULT_DOCS), str(DEFAULT_INDEX), embedder_name="tfidf")
+
+
+ensure_index()
 
 tab_ask, tab_eval = st.tabs(["Ask a question", "Evaluation results"])
 

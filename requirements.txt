@@ -5,6 +5,7 @@ pypdf
 scikit-learn
 numpy
 pytest
+streamlit
 
 # optional, only needed for milestone 4 (real embeddings) / LLM answer generation
 # sentence-transformers
