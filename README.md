@@ -3,14 +3,17 @@
 [![tests](https://github.com/omiee1234/rag-document-qa/actions/workflows/tests.yml/badge.svg)](https://github.com/omiee1234/rag-document-qa/actions/workflows/tests.yml)
 
 **[Live demo](https://rag-document-app-gwtmqkhdbmr4jpohhdzjhw.streamlit.app/)**
-— ask natural-language questions over 18 sample HR policy documents, get
-answers with citations to the exact source chunk — and, unlike most RAG
-demos, a harness that actually *measures* whether the retrieval and the
-answers are any good, against a hand-labeled question set.
+— ask natural-language questions over 18 sample HR policy documents, or
+upload your own (PDF/TXT/MD), and get answers with citations to the exact
+source chunk — and, unlike most RAG demos, a harness that actually
+*measures* whether the retrieval and the answers are any good, against a
+hand-labeled question set.
 
-Documents are ingested ahead of time (CLI or on app startup) from
-`data/docs/` — there's currently no in-app file upload; see
-[Possible extensions](#possible-extensions) below.
+Uploaded documents are indexed entirely in memory, per browser session --
+nothing is written to disk, and one visitor's uploads are never visible to
+another's (important on a shared, multi-visitor Streamlit Cloud instance).
+The evaluation harness always runs against the sample corpus, since the
+hand-labeled answer key was written for that specific set of documents.
 
 ## Architecture
 
@@ -97,10 +100,11 @@ pytest tests/ -q
 
 ## Web UI
 
-A small Streamlit app on top of the same pipeline — ask a question, see the
-grounded answer with its cited source chunks, or run the evaluation harness
-with one click and see recall@k/precision@k/MRR/faithfulness as live metrics.
-Free, local, no API key required.
+A small Streamlit app on top of the same pipeline — ask a question against
+the sample corpus or your own uploaded documents, see the grounded answer
+with its cited source chunks, or run the evaluation harness with one click
+and see recall@k/precision@k/MRR/faithfulness as live metrics. Free, local,
+no API key required.
 
 ```bash
 pip install -e ".[ui]"
@@ -180,11 +184,6 @@ Dockerfile       builds the index at image build time, serves /ask
 
 Not built, but straightforward additions if useful:
 
-- **In-app file upload** — currently documents live in `data/docs/` and
-  are ingested via the CLI (`ragqa ingest`) or automatically on app
-  startup (`ui.py`'s `ensure_index()`). A `st.file_uploader` in the
-  Streamlit UI could accept new files and re-run `ingest()` against a
-  user-specific index, rather than the fixed shared sample corpus.
 - A real pgvector or Qdrant backend in place of the in-memory store
   (the swap-in path is documented in `store.py` but not implemented)
 - LLM-as-judge faithfulness checking, as an alternative to the current
