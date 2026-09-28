@@ -66,7 +66,9 @@ def run_evaluation(
     index_path: str,
     top_k: int = 3,
     use_llm: bool | None = None,
+    progress=None,
 ) -> dict:
+    """progress: optional callable(done, total), called after each question."""
     qa_set = load_qa_set(qa_set_path)
     if not qa_set:
         raise ValueError(f"No questions found in {qa_set_path}")
@@ -74,7 +76,9 @@ def run_evaluation(
     recalls, precisions, rrs, faithful_flags = [], [], [], []
     per_question = []
 
-    for item in qa_set:
+    for n, item in enumerate(qa_set):
+        if progress is not None:
+            progress(n, len(qa_set))
         question = item["question"]
         correct_ids = item["correct_chunk_ids"]
 

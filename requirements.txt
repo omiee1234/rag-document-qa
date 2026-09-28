@@ -10,6 +10,9 @@ scikit-learn==1.9.1
 numpy==2.5.3
 pytest==9.1.1
 streamlit==1.64.0
+# hybrid search (BM25 + dense embeddings + re-ranker), ONNX-based, no torch
+fastembed==0.8.1
+onnxruntime==1.30.0
 
 # optional, only needed for milestone 4 (real embeddings) / LLM answer generation
 # sentence-transformers

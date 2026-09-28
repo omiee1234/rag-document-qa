@@ -4,9 +4,9 @@ import argparse
 import json
 
 from .evaluate import run_evaluation
-from .generate import LOW_CONFIDENCE_THRESHOLD, answer_question
+from .generate import answer_question, low_confidence_threshold
 from .ingest import ingest
-from .retrieve import retrieve
+from .retrieve import load_index, search_index
 
 
 def main() -> None:
@@ -16,7 +16,9 @@ def main() -> None:
     p_ingest = sub.add_parser("ingest", help="Chunk + embed a folder of documents into an index")
     p_ingest.add_argument("--docs", required=True, help="Directory of .pdf/.txt/.md files")
     p_ingest.add_argument("--index", default="index.pkl", help="Output index file")
-    p_ingest.add_argument("--embedder", default="tfidf", choices=["tfidf", "sentence-transformers", "openai"])
+    p_ingest.add_argument(
+        "--embedder", default="tfidf", choices=["tfidf", "hybrid", "sentence-transformers", "openai"]
+    )
     p_ingest.add_argument("--chunk-size", type=int, default=800)
     p_ingest.add_argument("--overlap", type=int, default=150)
 
@@ -47,12 +49,13 @@ def main() -> None:
         )
 
     elif args.command == "query":
-        retrieved = retrieve(args.question, args.index, top_k=args.top_k)
+        embedder, store = load_index(args.index)
+        retrieved = search_index(embedder, store, args.question, top_k=args.top_k)
         answer, citations = answer_question(args.question, retrieved)
         top_score = retrieved[0][1] if retrieved else 0.0
-        if top_score < LOW_CONFIDENCE_THRESHOLD:
+        if top_score < low_confidence_threshold(embedder):
             print(
-                f"Warning: low-confidence match (top similarity: {top_score:.3f}). "
+                f"Warning: low-confidence match (top score: {top_score:.3f}). "
                 "This index may not actually contain a good answer to this question."
             )
         if retrieved:

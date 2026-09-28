@@ -21,6 +21,7 @@ dependencies = [
 sentence-transformers = ["sentence-transformers"]
 openai = ["openai"]
 ui = ["streamlit"]
+hybrid = ["fastembed"]
 dev = ["pytest"]
 screenshots = ["playwright"]
 

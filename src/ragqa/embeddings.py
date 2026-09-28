@@ -115,6 +115,11 @@ _EMBEDDERS = {
 
 def get_embedder(name: str) -> Embedder:
     key = name.lower()
+    if key == "hybrid":
+        from .hybrid import HybridEmbedder  # imported lazily: hybrid imports this module
+
+        return HybridEmbedder()
     if key not in _EMBEDDERS:
-        raise ValueError(f"Unknown embedder '{name}'. Options: {sorted(set(_EMBEDDERS))}")
+        options = sorted(set(_EMBEDDERS) | {"hybrid"})
+        raise ValueError(f"Unknown embedder '{name}'. Options: {options}")
     return _EMBEDDERS[key]()

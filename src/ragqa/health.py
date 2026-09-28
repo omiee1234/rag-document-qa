@@ -65,7 +65,9 @@ def retrieval_health(
         if probe is None:
             continue
         report.checked += 1
-        results = search_index(embedder, store, probe, top_k=top_k)
+        # no re-ranking: it would cost ~0.2s per probe (tens of seconds per
+        # upload) and this check only needs a findability signal
+        results = search_index(embedder, store, probe, top_k=top_k, rerank=False)
         if any(e.chunk_id == entry.chunk_id for e, _ in results):
             report.found += 1
         else:

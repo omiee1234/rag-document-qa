@@ -43,11 +43,12 @@ def _drop_stale_ragqa_modules() -> None:
 
 _drop_stale_ragqa_modules()
 
-from ragqa.generate import LOW_CONFIDENCE_THRESHOLD, answer_question
+from ragqa.generate import answer_question, low_confidence_threshold
 from ragqa.health import HealthReport, retrieval_health
+from ragqa.hybrid import hybrid_available
 from ragqa.ingest import build_index_from_documents
 from ragqa.loaders import load_structured_bytes
-from ragqa.retrieve import retrieve, search_index
+from ragqa.retrieve import load_index, search_index
 
 for _module in _ragqa_modules().values():
     _module._loaded_mtime = os.path.getmtime(_module.__file__)
@@ -55,7 +56,11 @@ for _module in _ragqa_modules().values():
 ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_DOCS = ROOT / "data" / "docs"
 DEFAULT_QA_SET = ROOT / "data" / "eval" / "qa_set.json"
-DEFAULT_INDEX = ROOT / "index.pkl"
+SAMPLE_INDEX = {"tfidf": ROOT / "index.pkl", "hybrid": ROOT / "index_hybrid.pkl"}
+MODE_LABELS = {
+    "hybrid": "Hybrid: keywords + meaning + re-ranker (recommended)",
+    "tfidf": "Keyword only: TF-IDF baseline",
+}
 
 MAX_FILES = 10
 MAX_TOTAL_BYTES = 10 * 1024 * 1024  # 10 MB
@@ -65,8 +70,23 @@ st.title("📄 RAG Document Q&A")
 st.caption("Ask a question about the ingested documents. Answers are grounded and cited.")
 
 
-@st.cache_resource(show_spinner="Building index from data/docs (first run only)...")
-def ensure_sample_index() -> None:
+@st.cache_resource(show_spinner="Loading search models (first run downloads ~150 MB, about a minute)...")
+def warm_up_hybrid() -> str | None:
+    """Load both hybrid models once per process. Returns an error message if
+    they can't load (e.g. out of memory on the host) so the app can fall back
+    to TF-IDF instead of breaking."""
+    try:
+        from ragqa.hybrid import _dense_model, _reranker
+
+        list(_dense_model().embed(["warm up"]))
+        list(_reranker().rerank("warm up", ["warm up"]))
+    except Exception as exc:  # any failure here should degrade, not crash the app
+        return f"{type(exc).__name__}: {exc}"
+    return None
+
+
+@st.cache_resource(show_spinner="Building the sample index (first run only)...")
+def ensure_sample_index(mode: str) -> None:
     """Build the shared sample-corpus index on first run if it isn't already on disk.
 
     index.pkl is a build artifact (gitignored, not shipped in the repo) --
@@ -81,16 +101,17 @@ def ensure_sample_index() -> None:
 
     from ragqa.ingest import INDEX_FORMAT_VERSION, ingest
 
-    if DEFAULT_INDEX.exists():
+    path = SAMPLE_INDEX[mode]
+    if path.exists():
         # a redeploy can leave an index built by older code on disk; rebuild
         # it rather than query a different chunking scheme
-        with open(DEFAULT_INDEX, "rb") as f:
+        with open(path, "rb") as f:
             if pickle.load(f).get("version") == INDEX_FORMAT_VERSION:
                 return
-    ingest(str(DEFAULT_DOCS), str(DEFAULT_INDEX), embedder_name="tfidf")
+    ingest(str(DEFAULT_DOCS), str(path), embedder_name=mode)
 
 
-def build_uploaded_index(files) -> tuple:
+def build_uploaded_index(files, mode: str) -> tuple:
     """Build an in-memory index from uploaded files.
 
     Never written to disk -- Streamlit Cloud can serve multiple visitors
@@ -109,7 +130,7 @@ def build_uploaded_index(files) -> tuple:
         else:
             seen[doc_id] = 0
         documents.append(load_structured_bytes(f.name, f.getvalue(), doc_id=doc_id))
-    return build_index_from_documents(documents, embedder_name="tfidf")
+    return build_index_from_documents(documents, embedder_name=mode)
 
 
 _MARKDOWN_SPECIAL_RE = re.compile(r"([\\`*_{}\[\]()#+\-.!|>~<])")
@@ -154,7 +175,18 @@ def show_health(report: HealthReport | None) -> None:
         )
 
 
-ensure_sample_index()
+st.sidebar.header("Search mode")
+available_modes = ["hybrid", "tfidf"] if hybrid_available() else ["tfidf"]
+mode = st.sidebar.radio("Retrieval method:", available_modes, format_func=MODE_LABELS.get)
+if not hybrid_available():
+    st.sidebar.caption("Hybrid search isn't available here (fastembed couldn't be loaded).")
+if mode == "hybrid":
+    error = warm_up_hybrid()
+    if error:
+        st.sidebar.warning(f"Hybrid models failed to load, using keyword search instead. ({error})")
+        mode = "tfidf"
+
+ensure_sample_index(mode)
 
 st.sidebar.header("Document source")
 corpus_choice = st.sidebar.radio(
@@ -167,9 +199,7 @@ active_store = None
 source_label = ""
 
 if corpus_choice == "Sample HR policies (18 docs)":
-    from ragqa.retrieve import load_index
-
-    active_embedder, active_store = load_index(str(DEFAULT_INDEX))
+    active_embedder, active_store = load_index(str(SAMPLE_INDEX[mode]))
     source_label = "sample HR policy documents"
 else:
     st.sidebar.caption(f"Up to {MAX_FILES} files, {MAX_TOTAL_BYTES // (1024*1024)} MB total. PDF, TXT, or MD.")
@@ -192,13 +222,13 @@ else:
             st.sidebar.error("Total upload size exceeds 10 MB.")
         else:
             fingerprint = hashlib.sha256(
-                b"".join(f.name.encode() + f.getvalue() for f in uploaded_files)
+                mode.encode() + b"".join(f.name.encode() + f.getvalue() for f in uploaded_files)
             ).hexdigest()
 
             if st.session_state.get("upload_fingerprint") != fingerprint:
                 try:
                     with st.spinner("Reading document structure and indexing..."):
-                        embedder, store = build_uploaded_index(uploaded_files)
+                        embedder, store = build_uploaded_index(uploaded_files, mode)
                     with st.spinner("Checking retrieval health..."):
                         health = retrieval_health(embedder, store)
                 except ValueError as exc:
@@ -235,9 +265,9 @@ with tab_ask:
                 answer, citations = answer_question(question, retrieved)
 
             top_score = retrieved[0][1] if retrieved else 0.0
-            if top_score < LOW_CONFIDENCE_THRESHOLD:
+            if top_score < low_confidence_threshold(active_embedder):
                 st.warning(
-                    f"⚠️ Low-confidence match (top similarity: {top_score:.3f}). "
+                    f"⚠️ Low-confidence match (top score: {top_score:.3f}). "
                     "The selected document(s) may not actually contain a good "
                     "answer to this question -- treat the text below as the "
                     "closest match found, not a reliable answer."
@@ -250,7 +280,7 @@ with tab_ask:
 
             st.subheader("Cited chunks")
             for entry, score in retrieved:
-                with st.expander(f"{source_label_for(entry)}  (similarity: {score:.3f})"):
+                with st.expander(f"{source_label_for(entry)}  (score: {score:.3f})"):
                     st.caption(entry.chunk_id)
                     show_verbatim(entry.text)
 
@@ -260,13 +290,26 @@ with tab_eval:
         "question set (`data/eval/qa_set.json`) -- recall@k, precision@k, "
         "MRR, and a faithfulness check. This always runs against the "
         "**sample HR policy documents**, since the labeled answer key was "
-        "written for that corpus, not whatever you upload."
+        "written for that corpus, not whatever you upload. Switch the search "
+        "mode in the sidebar to compare hybrid against the TF-IDF baseline."
     )
-    if st.button("Run evaluation"):
-        with st.spinner("Running evaluation harness..."):
+    st.caption(f"Scoring: **{MODE_LABELS[mode]}**")
+    cache_key = f"eval::{mode}::{os.path.getmtime(SAMPLE_INDEX[mode])}"
+    if st.button("Run evaluation") or cache_key in st.session_state:
+        if cache_key not in st.session_state:
+            # ~1s per question in hybrid mode (the re-ranker), so show progress
+            # and keep the result: the sample corpus doesn't change
             from ragqa.evaluate import run_evaluation
 
-            results = run_evaluation(str(DEFAULT_QA_SET), str(DEFAULT_INDEX), top_k=3)
+            bar = st.progress(0.0, text="Scoring 50 questions...")
+            st.session_state[cache_key] = run_evaluation(
+                str(DEFAULT_QA_SET),
+                str(SAMPLE_INDEX[mode]),
+                top_k=3,
+                progress=lambda done, total: bar.progress(done / total, text=f"Question {done + 1} of {total}"),
+            )
+            bar.empty()
+        results = st.session_state[cache_key]
 
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Recall@3", f"{results['recall_at_k']:.2f}")

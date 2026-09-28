@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from .structure import HEADING, StructuredDoc
+from .structure import HEADING, StructuredDoc, with_context
 
 
 @dataclass
@@ -17,18 +17,11 @@ class Chunk:
     page: int | None = None
 
     @property
-    def context(self) -> str:
-        parts = [self.title]
-        if self.section and self.section != self.title:
-            parts.append(self.section)
-        return " › ".join(p for p in parts if p)
-
-    @property
     def embed_text(self) -> str:
         """What gets embedded: the chunk's text with its title/section in
         front, so it's retrievable by where it sits in the document. `text`
         stays the verbatim source, which is what's shown as the answer."""
-        return f"{self.context}\n{self.text}" if self.context else self.text
+        return with_context(self.title, self.section, self.text)
 
 
 def chunk_text(doc_id: str, text: str, chunk_size: int = 800, overlap: int = 150) -> list[Chunk]:

@@ -132,6 +132,7 @@ Optional extras:
 pip install -e ".[sentence-transformers]"   # real dense embeddings
 pip install -e ".[openai]"                  # LLM-generated answers instead of extractive
 pip install -e ".[ui]"                      # Streamlit demo app
+pip install -e ".[hybrid]"                  # hybrid search (fastembed, ONNX, no torch)
 pip install -e ".[dev]"                     # pytest
 pip install -e ".[screenshots]"             # playwright, for scripts/capture_screenshots.py
 ```
@@ -204,10 +205,15 @@ US/UK/India, remote-work variants for engineering/sales, etc.) that share
 heavy vocabulary, plus a handful of paraphrased questions that avoid the
 source document's literal wording:
 
-| Embedding | Recall@3 | Precision@3 | MRR | Faithfulness |
+| Retrieval | Recall@3 | Precision@3 | MRR | Faithfulness |
 |---|---|---|---|---|
 | TF-IDF (baseline) | 0.98 | 0.33 | 0.92 | 1.00 |
 | sentence-transformers (`all-MiniLM-L6-v2`)* | 0.98 | 0.33 | 0.96 | 1.00 |
+| **Hybrid: BM25 + bge-small + re-ranker** | **1.00** | 0.33 | **1.00** | 1.00 |
+
+Hybrid gets all 50 questions right at rank 1, including both failures
+described below that the single-method retrievers each missed. See
+[Hybrid search](#hybrid-search) for how it works and what it costs.
 
 \*Measured before structured chunking and plural folding (torch can't load
 on the current dev machine, so it hasn't been re-run). TF-IDF's MRR moved
@@ -247,9 +253,51 @@ in value next to it — because bag-of-words scoring can't distinguish "this
 word appears near the answer" from "this word appears as a repeated
 template label with no answer nearby." The correct chunk was still
 retrievable, just ranked 4th instead of 1st-3rd — which is why the UI and
-CLI's default top-k was raised from 3 to 5, as a partial mitigation. A
-real fix would need hybrid retrieval with a re-ranker, not just a bigger
-top-k; see Possible extensions.
+CLI's default top-k was raised from 3 to 5, as a partial mitigation.
+Hybrid search with a re-ranker is the real fix -- see below.
+
+## Hybrid search
+
+`hybrid.py` runs two searches on every question and merges them:
+
+1. **BM25** (keywords): stronger than TF-IDF at exact terms -- policy
+   numbers, clause ids, names.
+2. **Dense embeddings** (`BAAI/bge-small-en-v1.5`): matches meaning, so
+   "vacation in London" finds "annual leave, UK".
+3. **Reciprocal Rank Fusion** merges the two ranked lists (a chunk ranked
+   high by *either* rises), keeping the top 20.
+4. **Cross-encoder re-ranker** (`ms-marco-MiniLM-L-6-v2`) reads the
+   question and each candidate together and re-orders them.
+
+All local and free: models run on ONNX via `fastembed` (no torch, no API
+key), download once (~150 MB) and are cached. If they can't load, the app
+falls back to TF-IDF automatically. The search mode is switchable in the
+sidebar, so the two can be compared live.
+
+**Measured on the real insurance PDFs** (8 questions, checking that the
+actual answer *value* is in the result, not just a matching label):
+
+| | TF-IDF | Hybrid |
+|---|---|---|
+| Answer at rank 1 | 5/8 | 6/8 |
+| Answer in top 5 | 7/8 | 8/8 |
+| "What is the name of the proposer?" | not in top 5 | rank 2 |
+| "Who are the insured persons?" | rank 3 | rank 1 |
+
+**Confidence scores got meaningful.** The re-ranker's score cleanly
+separates answerable from unanswerable questions: off-topic questions
+("capital of France", "reset my Wi-Fi", "PTO" against an insurance PDF)
+scored ≤ 0.001, the lowest correct answer 0.023, so the low-confidence
+warning uses a 0.01 cutoff. TF-IDF couldn't do this -- after structured
+chunking, the off-topic PTO question scored 0.249 on the insurance PDF,
+above its warning threshold, so it would have been shown as a real answer.
+
+**What it costs:** ~1s per question locally (TF-IDF: ~3 ms) -- almost
+all of it the re-ranker reading 20 candidates. Re-ranking only 10 is ~2x
+faster but dropped one real-PDF answer out of the top 5, so it stays at
+20. The eval tab caches its result and shows progress (~1 min for 50
+questions). The upload health check skips the re-ranker, since it only
+needs a findability signal and would otherwise take tens of seconds.
 
 ## Project layout
 
@@ -269,5 +317,3 @@ Not built, but straightforward additions if useful:
   (the swap-in path is documented in `store.py` but not implemented)
 - LLM-as-judge faithfulness checking, as an alternative to the current
   word-overlap heuristic
-- Hybrid retrieval (lexical + dense, reranked) to address both failure
-  modes documented above instead of picking one embedder

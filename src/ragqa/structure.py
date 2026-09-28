@@ -35,6 +35,21 @@ class StructuredDoc:
         return "\n\n".join(parts)
 
 
+def context_label(title: str, section: str) -> str:
+    parts = [title]
+    if section and section != title:
+        parts.append(section)
+    return " › ".join(p for p in parts if p)
+
+
+def with_context(title: str, section: str, text: str) -> str:
+    """A chunk as the retriever sees it: "Title › Section" on the first line,
+    then the verbatim text. Used for embedding and for re-ranking, so both
+    judge a chunk with the same context."""
+    label = context_label(title, section)
+    return f"{label}\n{text}" if label else text
+
+
 _MD_HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 
 

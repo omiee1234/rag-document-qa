@@ -22,6 +22,12 @@ Retrieved = list[tuple[StoreEntry, float]]
 LOW_CONFIDENCE_THRESHOLD = 0.2
 
 
+def low_confidence_threshold(embedder) -> float:
+    """Scores aren't comparable across retrievers (TF-IDF cosine vs. the
+    hybrid re-ranker's probability), so each can declare its own cutoff."""
+    return getattr(embedder, "low_confidence_threshold", LOW_CONFIDENCE_THRESHOLD)
+
+
 def _extractive_answer(retrieved: Retrieved) -> tuple[str, list[str]]:
     if not retrieved:
         return "I don't have enough information to answer that.", []
