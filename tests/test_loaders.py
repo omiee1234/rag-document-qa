@@ -8,6 +8,18 @@ def test_clean_pdf_text_strips_replacement_character():
     assert "free look period" in cleaned
 
 
+def test_clean_pdf_text_strips_private_use_area_bullets():
+    # Word-generated PDFs commonly encode Symbol/Wingdings bullets as PUA
+    # codepoints (observed in the wild: U+F0B7) rather than U+FFFD -- this
+    # is the actual character that showed up in a real uploaded PDF and
+    # slipped through the first version of this cleaner, which only
+    # stripped U+FFFD.
+    dirty = "migrating the policy.\nThe insured person shall be allowed free look"
+    cleaned = _clean_pdf_text(dirty)
+    assert "" not in cleaned
+    assert "The insured person shall be allowed free look" in cleaned
+
+
 def test_clean_pdf_text_strips_control_characters():
     dirty = "Line one\x0bLine two\x0cLine three"
     cleaned = _clean_pdf_text(dirty)

@@ -5,11 +5,17 @@ from pathlib import Path
 
 SUPPORTED_SUFFIXES = {".pdf", ".txt", ".md"}
 
-# Control characters and the Unicode replacement character (U+FFFD) that
-# pypdf sometimes emits for glyphs it can't decode -- bullet points and
-# special symbols in some real-world PDFs (e.g. insurance/legal docs) come
-# through as literal replacement-character boxes otherwise.
-_UNDECODABLE_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f�]")
+# Characters that render as a "tofu" box and carry no readable meaning once
+# extracted:
+#  - \x00-\x1f/\x7f: control characters
+#  - �: the Unicode replacement character pypdf emits for glyphs it
+#    can't decode at all
+#  - -: the Private Use Area. Word-generated PDFs (a very common
+#    real-world source -- e.g. insurance/legal docs) frequently encode
+#    bullet points using a Symbol/Wingdings font mapped to PUA codepoints
+#    (observed: U+F0B7 for a bullet character); pypdf extracts the raw
+#    codepoint with no font info, so it comes through as an unreadable box.
+_UNDECODABLE_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f�-]")
 _EXTRA_SPACES_RE = re.compile(r"[ \t]{2,}")
 
 
