@@ -1,11 +1,15 @@
-fastapi
-uvicorn
-pydantic
-pdfplumber
-scikit-learn
-numpy
-pytest
-streamlit
+# Exact versions for the deployed app (Streamlit Community Cloud installs
+# from this file), so a new upstream release can't silently break the live
+# demo. pyproject.toml deliberately stays unpinned: CI installs from it, so a
+# breaking upstream release shows up as a red CI run instead of a broken app.
+fastapi==0.141.1
+uvicorn==0.54.0
+pydantic==2.13.5
+pdfplumber==0.11.10
+scikit-learn==1.9.1
+numpy==2.5.3
+pytest==9.1.1
+streamlit==1.64.0
 
 # optional, only needed for milestone 4 (real embeddings) / LLM answer generation
 # sentence-transformers

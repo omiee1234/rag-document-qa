@@ -14,6 +14,7 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from ragqa.generate import LOW_CONFIDENCE_THRESHOLD, answer_question
+from ragqa.health import HealthReport, retrieval_health
 from ragqa.ingest import build_index_from_documents
 from ragqa.loaders import load_document_bytes
 from ragqa.retrieve import retrieve, search_index
@@ -72,6 +73,27 @@ def build_uploaded_index(files) -> tuple:
     return build_index_from_documents(documents, embedder_name="tfidf")
 
 
+def show_health(report: HealthReport | None) -> None:
+    if report is None or report.checked == 0:
+        return
+    msg = (
+        f"**Retrieval health: {report.score:.0%}** — {report.found} of "
+        f"{report.checked} sections can be found by their own wording."
+    )
+    if report.score >= 0.9:
+        st.sidebar.success(msg + " This document should answer questions well.")
+    elif report.score >= 0.75:
+        st.sidebar.info(
+            msg + " Usually fine; some sections are repetitive or hard to "
+            "separate, so check citations on important answers."
+        )
+    else:
+        st.sidebar.warning(
+            msg + " Many sections are hard to retrieve — often a scanned PDF, "
+            "heavy tables, or a lot of repeated text. Expect weaker answers."
+        )
+
+
 ensure_sample_index()
 
 st.sidebar.header("Document source")
@@ -91,6 +113,12 @@ if corpus_choice == "Sample HR policies (18 docs)":
     source_label = "sample HR policy documents"
 else:
     st.sidebar.caption(f"Up to {MAX_FILES} files, {MAX_TOTAL_BYTES // (1024*1024)} MB total. PDF, TXT, or MD.")
+    st.sidebar.warning(
+        "This is a public demo. Don't upload documents containing personal "
+        "information (names, addresses, policy/ID numbers, medical details). "
+        "Uploads stay in your browser session's memory only and are never "
+        "saved to disk, but use sample or public documents to be safe."
+    )
     uploaded_files = st.sidebar.file_uploader(
         "Upload documents",
         type=["pdf", "txt", "md"],
@@ -110,15 +138,19 @@ else:
             if st.session_state.get("upload_fingerprint") != fingerprint:
                 with st.spinner("Indexing your documents..."):
                     embedder, store = build_uploaded_index(uploaded_files)
+                with st.spinner("Checking retrieval health..."):
+                    health = retrieval_health(embedder, store)
                 st.session_state["upload_fingerprint"] = fingerprint
                 st.session_state["upload_embedder"] = embedder
                 st.session_state["upload_store"] = store
                 st.session_state["upload_names"] = [f.name for f in uploaded_files]
+                st.session_state["upload_health"] = health
 
             active_embedder = st.session_state.get("upload_embedder")
             active_store = st.session_state.get("upload_store")
             source_label = f"{len(st.session_state.get('upload_names', []))} uploaded document(s)"
             st.sidebar.success("Indexed: " + ", ".join(st.session_state.get("upload_names", [])))
+            show_health(st.session_state.get("upload_health"))
 
 tab_ask, tab_eval = st.tabs(["Ask a question", "Evaluation results"])
 

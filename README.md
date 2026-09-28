@@ -15,6 +15,20 @@ another's (important on a shared, multi-visitor Streamlit Cloud instance).
 The evaluation harness always runs against the sample corpus, since the
 hand-labeled answer key was written for that specific set of documents.
 
+Uploaded documents get their own automatic quality signal instead:
+
+- **Header/footer stripping** (`loaders.py`): lines that repeat in the
+  top/bottom of many pages (company address, product/UIN line, page
+  numbers) are removed, keeping one copy. On a real 25-page insurance PDF
+  this removed ~15% of the text as boilerplate and cut the index from 88
+  to 75 chunks.
+- **Retrieval health check** (`health.py`): right after upload, each
+  sampled chunk is queried with a sentence from its own middle; the share
+  that comes back in the top 3 is shown in the sidebar. It's an upper bound,
+  not an accuracy score, but a low number reliably flags scanned PDFs,
+  heavy tables or near-duplicate sections before anyone relies on the
+  answers. Measured on the same PDF: 80% without stripping, 88% with it.
+
 ## Architecture
 
 ```
