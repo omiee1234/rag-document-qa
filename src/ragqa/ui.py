@@ -13,7 +13,7 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ragqa.generate import answer_question
+from ragqa.generate import LOW_CONFIDENCE_THRESHOLD, answer_question
 from ragqa.ingest import build_index_from_documents
 from ragqa.loaders import load_document_bytes
 from ragqa.retrieve import retrieve, search_index
@@ -134,6 +134,15 @@ with tab_ask:
             with st.spinner("Retrieving and answering..."):
                 retrieved = search_index(active_embedder, active_store, question, top_k=top_k)
                 answer, citations = answer_question(question, retrieved)
+
+            top_score = retrieved[0][1] if retrieved else 0.0
+            if top_score < LOW_CONFIDENCE_THRESHOLD:
+                st.warning(
+                    f"⚠️ Low-confidence match (top similarity: {top_score:.3f}). "
+                    "The selected document(s) may not actually contain a good "
+                    "answer to this question -- treat the text below as the "
+                    "closest match found, not a reliable answer."
+                )
 
             st.subheader("Answer")
             st.write(answer)

@@ -11,6 +11,16 @@ from .store import StoreEntry
 
 Retrieved = list[tuple[StoreEntry, float]]
 
+# Below this, treat the top match as a low-confidence guess rather than a
+# real answer. This is a heuristic, not a calibrated probability: checked
+# against the bundled 50-question labeled set, correct top-1 matches range
+# from 0.085 to 0.678 -- TF-IDF cosine similarity depends heavily on
+# vocabulary overlap, not just relevance, so a hard cutoff would reject some
+# genuinely correct (but lexically sparse) answers too. Callers should
+# surface this as a warning to the user, not use it to silently withhold
+# an answer -- see ui.py and cli.py for how it's used.
+LOW_CONFIDENCE_THRESHOLD = 0.2
+
 
 def _extractive_answer(retrieved: Retrieved) -> tuple[str, list[str]]:
     if not retrieved:

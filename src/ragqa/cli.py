@@ -4,7 +4,7 @@ import argparse
 import json
 
 from .evaluate import run_evaluation
-from .generate import answer_question
+from .generate import LOW_CONFIDENCE_THRESHOLD, answer_question
 from .ingest import ingest
 from .retrieve import retrieve
 
@@ -45,6 +45,12 @@ def main() -> None:
     elif args.command == "query":
         retrieved = retrieve(args.question, args.index, top_k=args.top_k)
         answer, citations = answer_question(args.question, retrieved)
+        top_score = retrieved[0][1] if retrieved else 0.0
+        if top_score < LOW_CONFIDENCE_THRESHOLD:
+            print(
+                f"Warning: low-confidence match (top similarity: {top_score:.3f}). "
+                "This index may not actually contain a good answer to this question."
+            )
         print("Answer:", answer)
         print("Citations:", citations)
 
