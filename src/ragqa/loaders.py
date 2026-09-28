@@ -1,10 +1,12 @@
-"""Load raw text out of source documents (PDF/TXT/MD)."""
+"""Load source documents (PDF/TXT/MD) into the StructuredDoc schema."""
 
 import io
 import math
 import re
 from collections import Counter
 from pathlib import Path
+
+from .structure import HEADING, PARAGRAPH, TABLE_ROW, Block, StructuredDoc, parse_markdown
 
 SUPPORTED_SUFFIXES = {".pdf", ".txt", ".md"}
 
@@ -40,6 +42,16 @@ _MIN_PAGES_FOR_STRIPPING = 3
 # numbered body lines ("Section 4.1 ...", "Section 4.2 ...") into one.
 _PAGE_NUMBER_RE = re.compile(r"^\s*(page\s*\|?\s*)?\d+\s*((of|/)\s*\d+)?\s*$", re.IGNORECASE)
 
+# Headings are detected by boldness, not font size: in real multi-part PDFs
+# body text is 8pt on one page and 12pt on another, so "bigger than body"
+# misfires, while real headings are consistently fully bold.
+_HEADING_MIN_BOLD = 0.8
+_HEADING_MAX_WORDS = 12
+_HEADING_MIN_LETTERS = 3
+# A new paragraph starts when the vertical gap to the previous line exceeds
+# this fraction of that line's height.
+_PARAGRAPH_GAP = 0.8
+
 
 def _clean_pdf_text(text: str) -> str:
     text = _UNDECODABLE_CHARS_RE.sub("", text)
@@ -50,87 +62,293 @@ def _normalize_line(line: str) -> str:
     return " ".join(line.split()).lower()
 
 
-def _strip_repeated_headers_footers(pages: list[str]) -> list[str]:
-    if len(pages) < _MIN_PAGES_FOR_STRIPPING:
-        return pages
+def _header_footer_keep_mask(page_lines: list[list[str]]) -> list[list[bool]]:
+    """Per line: False if it's a page number or a repeat of a running
+    header/footer line. The first copy of each repeated line is kept -- a
+    running header is often the only place a document states its identity
+    (product name, policy UIN)."""
+    keep = [[True] * len(lines) for lines in page_lines]
+    if len(page_lines) < _MIN_PAGES_FOR_STRIPPING:
+        return keep
 
-    page_lines = [p.splitlines() for p in pages]
     counts: Counter[str] = Counter()
+    longest_run: Counter[str] = Counter()
+    current_run: Counter[str] = Counter()
     for lines in page_lines:
         zone = lines[:_HEADER_FOOTER_ZONE] + lines[-_HEADER_FOOTER_ZONE:]
-        counts.update(
-            {_normalize_line(line) for line in zone if len(line.strip()) >= _MIN_LINE_CHARS}
-        )
+        keys = {_normalize_line(line) for line in zone if len(line.strip()) >= _MIN_LINE_CHARS}
+        counts.update(keys)
+        current_run = Counter({k: current_run[k] + 1 for k in keys})
+        for k, n in current_run.items():
+            longest_run[k] = max(longest_run[k], n)
+    min_pages = max(_MIN_REPEAT_PAGES, math.ceil(len(page_lines) * _REPEAT_FRACTION))
+    # Either common across the whole file, or repeated on consecutive pages:
+    # a bundled file's last sub-document had its own header on 6 straight
+    # pages -- only 24% of the 25 pages, but unmistakably a running header.
+    boilerplate = {
+        line
+        for line, n in counts.items()
+        if n >= min_pages or longest_run[line] >= _MIN_REPEAT_PAGES
+    }
 
-    min_pages = max(_MIN_REPEAT_PAGES, math.ceil(len(pages) * _REPEAT_FRACTION))
-    boilerplate = {line for line, n in counts.items() if n >= min_pages}
-    if not boilerplate:
-        return pages
-
-    # The first copy of each repeated line is kept: a running header is often
-    # the only place a document states its own identity (product name, policy
-    # UIN), so removing every copy would break "what policy is this?".
     seen: set[str] = set()
-    cleaned = []
-    for lines in page_lines:
+    for p, lines in enumerate(page_lines):
         last = len(lines)
-        kept = []
         for i, line in enumerate(lines):
-            key = _normalize_line(line)
-            in_zone = i < _HEADER_FOOTER_ZONE or i >= last - _HEADER_FOOTER_ZONE
-            if in_zone and _PAGE_NUMBER_RE.match(line):
+            if not (i < _HEADER_FOOTER_ZONE or i >= last - _HEADER_FOOTER_ZONE):
                 continue
-            if in_zone and key in boilerplate:
+            if _PAGE_NUMBER_RE.match(line):
+                keep[p][i] = False
+                continue
+            key = _normalize_line(line)
+            if key in boilerplate:
                 if key in seen:
-                    continue
-                seen.add(key)
-            kept.append(line)
-        cleaned.append("\n".join(kept))
-    return cleaned
+                    keep[p][i] = False
+                else:
+                    seen.add(key)
+    return keep
 
 
-def _extract_pdf_text(source) -> str:
+def _strip_repeated_headers_footers(pages: list[str]) -> list[str]:
+    page_lines = [p.splitlines() for p in pages]
+    mask = _header_footer_keep_mask(page_lines)
+    return [
+        "\n".join(line for line, keep in zip(lines, keep_row) if keep)
+        for lines, keep_row in zip(page_lines, mask)
+    ]
+
+
+def _clean_cell(cell: str | None) -> str:
+    return _clean_pdf_text(" ".join((cell or "").split()))
+
+
+def _looks_like_header_row(cells: list[str]) -> bool:
+    filled = [c for c in cells if c]
+    return (
+        len(filled) >= 3
+        and not any(ch.isdigit() for c in filled for ch in c)
+        and sum(len(c) for c in filled) / len(filled) <= 40
+    )
+
+
+def _merge_continuation_rows(rows: list[list[str]]) -> list[list[str]]:
+    """A cell's text wrapped onto the next row shows up as a row whose first
+    cell is empty under a row whose first cell isn't ("Type of" /
+    "Insurance" / "Product/ Policy") -- glue those back into one row."""
+    merged: list[list[str]] = []
+    for row in rows:
+        prev = merged[-1] if merged else None
+        if prev is not None and not row[0] and prev[0] and len(row) == len(prev):
+            merged[-1] = [f"{a} {b}".strip() for a, b in zip(prev, row)]
+        else:
+            merged.append(row)
+    return merged
+
+
+def _table_blocks(rows: list[list[str | None]], page: int) -> list[Block]:
+    """Turn one extracted table into blocks.
+
+    A leading single-cell row ("Details of Policyholder") is the table's
+    title, so it becomes a heading. If the first multi-cell row is short
+    text-only cells, it's a column header, and later rows with the same shape
+    are rendered as "Header: value; ..." so each row reads on its own. Only
+    the first multi-cell row may be a header: letting any later row qualify
+    mislabelled values in testing ("EIA No.: <an intermediary code>").
+    Anything else is joined with " | " -- including tables used purely for
+    page layout.
+    """
+    cleaned = [[_clean_cell(c) for c in row] for row in rows]
+    cleaned = _merge_continuation_rows([row for row in cleaned if any(row)])
+    if not cleaned:
+        return []
+    if len(cleaned) == 1:
+        text = " ".join(c for c in cleaned[0] if c)
+        return [Block(text, HEADING if _heading_shaped(text) else PARAGRAPH, page)]
+
+    blocks: list[Block] = []
+    header: list[str] | None = None
+    header_used = False
+    seen_multi_cell_row = False
+    for row in cleaned:
+        filled = [c for c in row if c]
+        if not blocks and header is None and len(filled) == 1 and _heading_shaped(filled[0]):
+            blocks.append(Block(filled[0], HEADING, page))
+            continue
+        if len(filled) >= 2 and not seen_multi_cell_row:
+            seen_multi_cell_row = True
+            if _looks_like_header_row(row):
+                header = row
+                continue
+        if header is not None and len(row) == len(header):
+            # a value under a blank header cell (merged header cells shift
+            # columns) is kept bare rather than dropped -- losing a value
+            # silently is worse than an unlabelled one
+            pairs = [f"{h}: {v}" if h else v for h, v in zip(header, row) if v]
+            if pairs:
+                blocks.append(Block("; ".join(pairs), TABLE_ROW, page))
+                header_used = True
+                continue
+        blocks.append(Block(" | ".join(filled), TABLE_ROW, page))
+    if header is not None and not header_used:
+        blocks.append(Block(" | ".join(c for c in header if c), TABLE_ROW, page))
+    return blocks
+
+
+# A bold line ending in one of these is a sentence wrapped onto the next
+# line, not a heading ("All exclusions applicable to the base product will").
+_DANGLING_WORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in", "is",
+    "of", "on", "or", "shall", "the", "to", "was", "which", "will", "with",
+}
+
+
+# A token with this many digits is a value (policy/application number,
+# phone, date run), so the line is a bold label+value, not a heading --
+# e.g. "Application No HE01862691Q202609" must stay searchable body text.
+_VALUE_MIN_DIGITS = 5
+
+
+# Bold lines that are list items, labels or wrapped fragments rather than
+# section titles. Seen in testing: "2. Per Claim Deductible (Applicable for
+# each and every claim" became a section and then mislabelled unrelated text
+# on the following page as belonging to it -- a wrong section label is worse
+# than none, since the page number is always shown anyway.
+_LIST_ITEM_RE = re.compile(r"^(\(?(\d{1,2}|[a-z]|[ivx]{1,4})[.)])\s", re.IGNORECASE)
+
+
+def _heading_shaped(text: str) -> bool:
+    words = text.split()
+    return (
+        1 <= len(words) <= _HEADING_MAX_WORDS
+        and sum(ch.isalpha() for ch in text) >= _HEADING_MIN_LETTERS
+        and words[-1].lower().strip(",") not in _DANGLING_WORDS
+        and not any(sum(ch.isdigit() for ch in w) >= _VALUE_MIN_DIGITS for w in words)
+        and not _LIST_ITEM_RE.match(text)
+        and not text[0].islower()
+        and not text.endswith(("-", ":", ","))
+        and "http" not in text.lower()
+        and "www." not in text.lower()
+    )
+
+
+def _is_heading(text: str, chars: list[dict]) -> bool:
+    if not chars:
+        return False
+    bold = sum("bold" in c.get("fontname", "").lower() for c in chars) / len(chars)
+    return bold >= _HEADING_MIN_BOLD and _heading_shaped(text)
+
+
+def _inside(line: dict, bbox: tuple) -> bool:
+    x0, top, x1, bottom = bbox
+    mid = (line["top"] + line["bottom"]) / 2
+    return top <= mid <= bottom and line["x0"] < x1 and line["x1"] > x0
+
+
+def _parse_pdf(doc_id: str, source) -> StructuredDoc:
     """source: a filesystem path string or a binary file-like object."""
     import pdfplumber
 
+    pages = []
     with pdfplumber.open(source) as pdf:
-        pages = [page.extract_text() or "" for page in pdf.pages]
-    pages = _strip_repeated_headers_footers(pages)
-    return _clean_pdf_text("\n".join(pages))
+        for number, page in enumerate(pdf.pages, 1):
+            try:
+                tables = page.find_tables()
+            except Exception:  # malformed table geometry shouldn't sink the whole document
+                tables = []
+            table_items = [(t.bbox, t.extract()) for t in tables]
+            lines = [
+                line
+                for line in page.extract_text_lines(return_chars=True)
+                if not any(_inside(line, bbox) for bbox, _ in table_items)
+            ]
+            pages.append((number, lines, table_items))
+
+    mask = _header_footer_keep_mask([[line["text"] for line in lines] for _, lines, _ in pages])
+
+    doc = StructuredDoc(doc_id=doc_id)
+    for (number, lines, table_items), keep_row in zip(pages, mask):
+        items: list[tuple[float, int, Block]] = []  # (top, order, block) for reading order
+        paragraph: list[str] = []
+        paragraph_top = 0.0
+        prev = None
+
+        def flush() -> None:
+            if paragraph:
+                items.append((paragraph_top, len(items), Block(" ".join(paragraph), PARAGRAPH, number)))
+                paragraph.clear()
+
+        for line, keep in zip(lines, keep_row):
+            if not keep:
+                continue
+            text = _clean_pdf_text(" ".join(line["text"].split()))
+            if not text:
+                continue
+            if _is_heading(text, line.get("chars", [])):
+                flush()
+                items.append((line["top"], len(items), Block(text, HEADING, number)))
+                prev = None
+                continue
+            if prev is not None:
+                gap = line["top"] - prev["bottom"]
+                if gap > _PARAGRAPH_GAP * (prev["bottom"] - prev["top"]):
+                    flush()
+            if not paragraph:
+                paragraph_top = line["top"]
+            paragraph.append(text)
+            prev = line
+        flush()
+
+        for bbox, rows in table_items:
+            for block in _table_blocks(rows, number):
+                items.append((bbox[1], len(items), block))
+
+        items.sort(key=lambda item: (item[0], item[1]))
+        doc.blocks.extend(block for _, _, block in items)
+
+    first_heading = next((b for b in doc.blocks if b.kind == HEADING), None)
+    if first_heading is not None:
+        doc.title = first_heading.text
+    return doc
 
 
-def load_document(path: Path) -> str:
-    """Return the raw text contents of a single document."""
+def load_structured(path: Path, doc_id: str | None = None) -> StructuredDoc:
+    doc_id = doc_id or path.stem
     suffix = path.suffix.lower()
-
     if suffix == ".pdf":
-        return _extract_pdf_text(str(path))
-
+        return _parse_pdf(doc_id, str(path))
     if suffix in (".txt", ".md"):
-        return path.read_text(encoding="utf-8")
-
+        return parse_markdown(doc_id, path.read_text(encoding="utf-8"))
     raise ValueError(f"Unsupported file type: {suffix} ({path})")
 
 
-def load_documents(doc_dir: Path) -> dict[str, str]:
-    """Load every supported document in a directory. Returns {doc_id: text}."""
-    doc_dir = Path(doc_dir)
-    texts: dict[str, str] = {}
-    for path in sorted(doc_dir.iterdir()):
-        if path.suffix.lower() in SUPPORTED_SUFFIXES:
-            texts[path.stem] = load_document(path)
-    return texts
+def load_structured_bytes(filename: str, data: bytes, doc_id: str | None = None) -> StructuredDoc:
+    """Same as load_structured, from in-memory bytes (e.g. a browser upload),
+    so uploaded content is never written to disk."""
+    doc_id = doc_id or Path(filename).stem
+    suffix = Path(filename).suffix.lower()
+    if suffix == ".pdf":
+        return _parse_pdf(doc_id, io.BytesIO(data))
+    if suffix in (".txt", ".md"):
+        return parse_markdown(doc_id, data.decode("utf-8", errors="replace"))
+    raise ValueError(f"Unsupported file type: {suffix} ({filename})")
+
+
+def load_structured_documents(doc_dir: Path) -> list[StructuredDoc]:
+    return [
+        load_structured(path)
+        for path in sorted(Path(doc_dir).iterdir())
+        if path.suffix.lower() in SUPPORTED_SUFFIXES
+    ]
+
+
+def load_document(path: Path) -> str:
+    """Plain-text view of a document (title + all blocks)."""
+    return load_structured(path).plain_text()
 
 
 def load_document_bytes(filename: str, data: bytes) -> str:
-    """Same as load_document, but from in-memory bytes (e.g. a browser upload)
-    instead of a filesystem path -- avoids ever writing uploaded content to disk."""
-    suffix = Path(filename).suffix.lower()
+    return load_structured_bytes(filename, data).plain_text()
 
-    if suffix == ".pdf":
-        return _extract_pdf_text(io.BytesIO(data))
 
-    if suffix in (".txt", ".md"):
-        return data.decode("utf-8", errors="replace")
-
-    raise ValueError(f"Unsupported file type: {suffix} ({filename})")
+def load_documents(doc_dir: Path) -> dict[str, str]:
+    return {doc.doc_id: doc.plain_text() for doc in load_structured_documents(doc_dir)}

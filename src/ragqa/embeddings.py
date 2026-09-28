@@ -4,9 +4,36 @@ Swapping embedding providers should never touch chunking, storage, retrieval,
 generation, or evaluation code -- only `get_embedder(name)` changes.
 """
 
+import re
 from abc import ABC, abstractmethod
 
 import numpy as np
+
+_TOKEN_RE = re.compile(r"(?u)\b\w\w+\b")
+
+
+def _normalize_token(token: str) -> str:
+    """Crude plural folding so "persons"/"person" and "policies"/"policy"
+    match. Not linguistically exact -- it only has to map both sides of a
+    query/document pair to the same form, since the same function runs on
+    both. Found necessary in testing: "who are the insured persons" missed a
+    table whose rows say "Insured Person's Name"."""
+    if len(token) > 4 and token.endswith("ies"):
+        return token[:-3] + "y"
+    if len(token) > 3 and token.endswith("s") and not token.endswith(("ss", "us", "is")):
+        return token[:-1]
+    return token
+
+
+def tfidf_analyzer(text: str) -> list[str]:
+    # module-level (not a lambda) so a fitted vectorizer stays picklable
+    from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
+
+    return [
+        _normalize_token(t)
+        for t in _TOKEN_RE.findall(text.lower())
+        if t not in ENGLISH_STOP_WORDS
+    ]
 
 
 class Embedder(ABC):
@@ -29,7 +56,7 @@ class TfidfEmbedder(Embedder):
     def __init__(self):
         from sklearn.feature_extraction.text import TfidfVectorizer
 
-        self.vectorizer = TfidfVectorizer(stop_words="english")
+        self.vectorizer = TfidfVectorizer(analyzer=tfidf_analyzer)
         self._fitted = False
 
     def fit(self, texts: list[str]) -> None:

@@ -18,14 +18,26 @@ class StoreEntry:
     doc_id: str
     text: str
     vector: np.ndarray
+    title: str = ""
+    section: str = ""
+    page: int | None = None
 
 
 class InMemoryVectorStore:
     def __init__(self):
         self.entries: list[StoreEntry] = []
 
-    def add(self, chunk_id: str, doc_id: str, text: str, vector: np.ndarray) -> None:
-        self.entries.append(StoreEntry(chunk_id, doc_id, text, vector))
+    def add(
+        self,
+        chunk_id: str,
+        doc_id: str,
+        text: str,
+        vector: np.ndarray,
+        title: str = "",
+        section: str = "",
+        page: int | None = None,
+    ) -> None:
+        self.entries.append(StoreEntry(chunk_id, doc_id, text, vector, title, section, page))
 
     def __len__(self) -> int:
         return len(self.entries)

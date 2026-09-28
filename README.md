@@ -29,16 +29,63 @@ Uploaded documents get their own automatic quality signal instead:
   heavy tables or near-duplicate sections before anyone relies on the
   answers. Measured on the same PDF: 80% without stripping, 88% with it.
 
+## Document schema
+
+Every source file is parsed into one structure (`structure.py`) before
+chunking, instead of being flattened into a single string:
+
+```
+StructuredDoc(doc_id, title, blocks=[
+    Block(kind="heading",   text="Details of Policyholder",            page=3),
+    Block(kind="table_row", text="Name: ...; Relationship: Self; ...",  page=3),
+    Block(kind="paragraph", text="You may cancel the policy within ...", page=17),
+])
+```
+
+- **PDFs** (`loaders.py`): tables are extracted cell by cell. A column
+  header row turns each data row into self-describing `Label: value` pairs,
+  instead of the word soup plain text extraction produces from table
+  layouts. Headings are detected by **boldness**, not font size (body text
+  in one real PDF ranged from 8pt to 12pt between sections). Bold numbered
+  list items, labels and wrapped fragments are rejected as headings.
+- **Markdown/text**: `#` lines are headings, blank lines separate
+  paragraphs, the first `#` heading is the title.
+- **Chunking** (`chunking.py`): blocks are packed into chunks that never
+  cross a heading. Each chunk carries `title`, `section` and `page`, and is
+  embedded with that context in front (`"Title › Section\n<text>"`), so
+  it's findable by *where it sits*, not just its own words. The answer
+  shown is still the verbatim source text, now labelled
+  `📍 Title › Section · page N`.
+
+Measured on the real 25-page insurance PDF plus a proposal form, against
+9 hand-written questions (old = flat text + fixed-size character chunks):
+
+| | Old | Structured |
+|---|---|---|
+| Retrieval health (policy PDF) | 88% | 96% |
+| Correct content at rank 1 | 4/9 | 5/9 |
+| Correct content in top 5 (shown by default) | 7/9 | 9/9 |
+
+The TF-IDF tokenizer also now folds plurals and possessives ("persons" →
+"person", "policies" → "policy"). Without it, "who are the insured persons"
+missed a table whose rows say "Insured Person's Name".
+
+**Known limitations:** heading detection is heuristic. A truncated bold
+fragment can still become a section, and a section label carries over
+until the next heading, so it's occasionally stale. Page numbers are
+always exact. Scanned (image-only) PDFs have no text layer and aren't
+supported.
+
 ## Architecture
 
 ```
                     ┌─────────────┐
-  docs/*.md,.pdf →  │  loaders.py │ → raw text per document
+  docs/*.md,.pdf →  │  loaders.py │ → StructuredDoc: title + headings/paragraphs/table rows, per page
                     └─────────────┘
                           │
                           ▼
                     ┌─────────────┐
-                    │ chunking.py │ → overlapping Chunk objects, stable ids ("doc::0")
+                    │ chunking.py │ → section-bounded chunks with title/section/page, stable ids ("doc::0")
                     └─────────────┘
                           │
                           ▼
@@ -159,8 +206,13 @@ source document's literal wording:
 
 | Embedding | Recall@3 | Precision@3 | MRR | Faithfulness |
 |---|---|---|---|---|
-| TF-IDF (baseline) | 0.98 | 0.33 | 0.93 | 1.00 |
-| sentence-transformers (`all-MiniLM-L6-v2`) | 0.98 | 0.33 | 0.96 | 1.00 |
+| TF-IDF (baseline) | 0.98 | 0.33 | 0.92 | 1.00 |
+| sentence-transformers (`all-MiniLM-L6-v2`)* | 0.98 | 0.33 | 0.96 | 1.00 |
+
+\*Measured before structured chunking and plural folding (torch can't load
+on the current dev machine, so it hasn't been re-run). TF-IDF's MRR moved
+0.93 → 0.92 with plural folding: 3 of 50 questions swapped between rank 1
+and 2 (1 better, 2 worse), all between near-duplicate sample documents.
 
 **What actually happened, question by question:**
 

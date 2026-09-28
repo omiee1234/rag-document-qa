@@ -58,6 +58,16 @@ def test_short_generic_lines_are_not_treated_as_boilerplate():
     assert joined.count("Yes") == 5
 
 
+def test_header_on_consecutive_pages_is_stripped_even_if_rare_overall():
+    # A bundled PDF: the last sub-document repeats its own header on 3
+    # straight pages -- under 25% of all pages, but clearly a running header.
+    body = [f"distinct body sentence number {i} here" for i in range(20)]
+    pages = [f"Unrelated page {i}\n" + "\n".join(body[i:i + 1]) for i in range(10)]
+    pages += [f"Acme Sub-Document Header\n{b}" for b in body[10:13]]
+    joined = "\n".join(_strip_repeated_headers_footers(pages))
+    assert joined.count("Acme Sub-Document Header") == 1
+
+
 def test_documents_under_three_pages_are_left_alone():
     pages = [_page(1, ["One."]), _page(2, ["Two."])]
     assert _strip_repeated_headers_footers(pages) == pages

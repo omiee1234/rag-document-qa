@@ -6,6 +6,7 @@ extractive fallback in generate.py unless OPENAI_API_KEY is set).
 """
 
 import hashlib
+import re
 import sys
 from pathlib import Path
 
@@ -16,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from ragqa.generate import LOW_CONFIDENCE_THRESHOLD, answer_question
 from ragqa.health import HealthReport, retrieval_health
 from ragqa.ingest import build_index_from_documents
-from ragqa.loaders import load_document_bytes
+from ragqa.loaders import load_structured_bytes
 from ragqa.retrieve import retrieve, search_index
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -44,10 +45,17 @@ def ensure_sample_index() -> None:
     and avoids that whole class of failure. st.cache_resource makes this
     run only once per app instance, not on every rerun.
     """
-    if not DEFAULT_INDEX.exists():
-        from ragqa.ingest import ingest
+    import pickle
 
-        ingest(str(DEFAULT_DOCS), str(DEFAULT_INDEX), embedder_name="tfidf")
+    from ragqa.ingest import INDEX_FORMAT_VERSION, ingest
+
+    if DEFAULT_INDEX.exists():
+        # a redeploy can leave an index built by older code on disk; rebuild
+        # it rather than query a different chunking scheme
+        with open(DEFAULT_INDEX, "rb") as f:
+            if pickle.load(f).get("version") == INDEX_FORMAT_VERSION:
+                return
+    ingest(str(DEFAULT_DOCS), str(DEFAULT_INDEX), embedder_name="tfidf")
 
 
 def build_uploaded_index(files) -> tuple:
@@ -59,18 +67,35 @@ def build_uploaded_index(files) -> tuple:
     clobber another user's session. Everything here lives only in this
     browser session's st.session_state.
     """
-    documents: dict[str, str] = {}
+    documents = []
     seen: dict[str, int] = {}
     for f in files:
-        text = load_document_bytes(f.name, f.getvalue())
         doc_id = Path(f.name).stem
         if doc_id in seen:
             seen[doc_id] += 1
             doc_id = f"{doc_id}_{seen[doc_id]}"
         else:
             seen[doc_id] = 0
-        documents[doc_id] = text
+        documents.append(load_structured_bytes(f.name, f.getvalue(), doc_id=doc_id))
     return build_index_from_documents(documents, embedder_name="tfidf")
+
+
+_MARKDOWN_SPECIAL_RE = re.compile(r"([\\`*_{}\[\]()#+\-.!|>~<])")
+
+
+def show_verbatim(text: str) -> None:
+    """Render source text as-is: markdown characters escaped (a PDF's
+    "*2800...*" or "# Title" shouldn't turn into italics/headings), line
+    breaks preserved, still word-wrapped."""
+    st.markdown(_MARKDOWN_SPECIAL_RE.sub(r"\\\1", text).replace("\n", "  \n"))
+
+
+def source_label_for(entry) -> str:
+    parts = [p for p in (entry.title, entry.section) if p]
+    if len(parts) == 2 and parts[0] == parts[1]:
+        parts = parts[:1]
+    where = " › ".join(parts) or entry.doc_id
+    return f"{where} · page {entry.page}" if entry.page else where
 
 
 def show_health(report: HealthReport | None) -> None:
@@ -136,21 +161,28 @@ else:
             ).hexdigest()
 
             if st.session_state.get("upload_fingerprint") != fingerprint:
-                with st.spinner("Indexing your documents..."):
-                    embedder, store = build_uploaded_index(uploaded_files)
-                with st.spinner("Checking retrieval health..."):
-                    health = retrieval_health(embedder, store)
-                st.session_state["upload_fingerprint"] = fingerprint
-                st.session_state["upload_embedder"] = embedder
-                st.session_state["upload_store"] = store
-                st.session_state["upload_names"] = [f.name for f in uploaded_files]
-                st.session_state["upload_health"] = health
+                try:
+                    with st.spinner("Reading document structure and indexing..."):
+                        embedder, store = build_uploaded_index(uploaded_files)
+                    with st.spinner("Checking retrieval health..."):
+                        health = retrieval_health(embedder, store)
+                except ValueError as exc:
+                    st.sidebar.error(f"Couldn't index these files: {exc}")
+                    st.session_state.pop("upload_fingerprint", None)
+                    st.session_state.pop("upload_store", None)
+                else:
+                    st.session_state["upload_fingerprint"] = fingerprint
+                    st.session_state["upload_embedder"] = embedder
+                    st.session_state["upload_store"] = store
+                    st.session_state["upload_names"] = [f.name for f in uploaded_files]
+                    st.session_state["upload_health"] = health
 
-            active_embedder = st.session_state.get("upload_embedder")
-            active_store = st.session_state.get("upload_store")
-            source_label = f"{len(st.session_state.get('upload_names', []))} uploaded document(s)"
-            st.sidebar.success("Indexed: " + ", ".join(st.session_state.get("upload_names", [])))
-            show_health(st.session_state.get("upload_health"))
+            if st.session_state.get("upload_fingerprint") == fingerprint:
+                active_embedder = st.session_state.get("upload_embedder")
+                active_store = st.session_state.get("upload_store")
+                source_label = f"{len(st.session_state.get('upload_names', []))} uploaded document(s)"
+                st.sidebar.success("Indexed: " + ", ".join(st.session_state.get("upload_names", [])))
+                show_health(st.session_state.get("upload_health"))
 
 tab_ask, tab_eval = st.tabs(["Ask a question", "Evaluation results"])
 
@@ -177,12 +209,15 @@ with tab_ask:
                 )
 
             st.subheader("Answer")
-            st.write(answer)
+            if retrieved:
+                st.caption(f"📍 {source_label_for(retrieved[0][0])}")
+            show_verbatim(answer)
 
             st.subheader("Cited chunks")
             for entry, score in retrieved:
-                with st.expander(f"{entry.chunk_id}  (similarity: {score:.3f})"):
-                    st.write(entry.text)
+                with st.expander(f"{source_label_for(entry)}  (similarity: {score:.3f})"):
+                    st.caption(entry.chunk_id)
+                    show_verbatim(entry.text)
 
 with tab_eval:
     st.write(

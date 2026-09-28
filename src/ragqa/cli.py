@@ -55,6 +55,10 @@ def main() -> None:
                 f"Warning: low-confidence match (top similarity: {top_score:.3f}). "
                 "This index may not actually contain a good answer to this question."
             )
+        if retrieved:
+            top = retrieved[0][0]
+            where = " > ".join(p for p in dict.fromkeys((top.title, top.section)) if p)
+            print("Source:", f"{where} (page {top.page})" if top.page else where or top.doc_id)
         print("Answer:", answer)
         print("Citations:", citations)
 
