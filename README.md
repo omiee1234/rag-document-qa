@@ -2,10 +2,15 @@
 
 [![tests](https://github.com/omiee1234/rag-document-qa/actions/workflows/tests.yml/badge.svg)](https://github.com/omiee1234/rag-document-qa/actions/workflows/tests.yml)
 
-Upload policy documents, ask natural-language questions, get answers with
-citations to the exact source chunk — and, unlike most RAG demos, a
-harness that actually *measures* whether the retrieval and the answers are
-any good, against a hand-labeled question set.
+**[Live demo](https://rag-document-app-gwtmqkhdbmr4jpohhdzjhw.streamlit.app/)**
+— ask natural-language questions over 18 sample HR policy documents, get
+answers with citations to the exact source chunk — and, unlike most RAG
+demos, a harness that actually *measures* whether the retrieval and the
+answers are any good, against a hand-labeled question set.
+
+Documents are ingested ahead of time (CLI or on app startup) from
+`data/docs/` — there's currently no in-app file upload; see
+[Possible extensions](#possible-extensions) below.
 
 ## Architecture
 
@@ -170,3 +175,19 @@ data/eval/       labeled question -> correct_chunk_ids set
 tests/           pytest unit tests for chunking, store, evaluation math
 Dockerfile       builds the index at image build time, serves /ask
 ```
+
+## Possible extensions
+
+Not built, but straightforward additions if useful:
+
+- **In-app file upload** — currently documents live in `data/docs/` and
+  are ingested via the CLI (`ragqa ingest`) or automatically on app
+  startup (`ui.py`'s `ensure_index()`). A `st.file_uploader` in the
+  Streamlit UI could accept new files and re-run `ingest()` against a
+  user-specific index, rather than the fixed shared sample corpus.
+- A real pgvector or Qdrant backend in place of the in-memory store
+  (the swap-in path is documented in `store.py` but not implemented)
+- LLM-as-judge faithfulness checking, as an alternative to the current
+  word-overlap heuristic
+- Hybrid retrieval (lexical + dense, reranked) to address both failure
+  modes documented above instead of picking one embedder
