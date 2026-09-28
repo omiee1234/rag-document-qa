@@ -29,10 +29,10 @@ def load_document(path: Path) -> str:
     suffix = path.suffix.lower()
 
     if suffix == ".pdf":
-        from pypdf import PdfReader
+        import pdfplumber
 
-        reader = PdfReader(str(path))
-        text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        with pdfplumber.open(str(path)) as pdf:
+            text = "\n".join(page.extract_text() or "" for page in pdf.pages)
         return _clean_pdf_text(text)
 
     if suffix in (".txt", ".md"):
@@ -59,10 +59,10 @@ def load_document_bytes(filename: str, data: bytes) -> str:
     if suffix == ".pdf":
         import io
 
-        from pypdf import PdfReader
+        import pdfplumber
 
-        reader = PdfReader(io.BytesIO(data))
-        text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        with pdfplumber.open(io.BytesIO(data)) as pdf:
+            text = "\n".join(page.extract_text() or "" for page in pdf.pages)
         return _clean_pdf_text(text)
 
     if suffix in (".txt", ".md"):

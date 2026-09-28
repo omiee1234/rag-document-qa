@@ -12,7 +12,7 @@ dependencies = [
     "fastapi",
     "uvicorn",
     "pydantic",
-    "pypdf",
+    "pdfplumber",
     "scikit-learn",
     "numpy",
 ]
