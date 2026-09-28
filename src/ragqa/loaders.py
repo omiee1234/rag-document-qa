@@ -1,8 +1,21 @@
 """Load raw text out of source documents (PDF/TXT/MD)."""
 
+import re
 from pathlib import Path
 
 SUPPORTED_SUFFIXES = {".pdf", ".txt", ".md"}
+
+# Control characters and the Unicode replacement character (U+FFFD) that
+# pypdf sometimes emits for glyphs it can't decode -- bullet points and
+# special symbols in some real-world PDFs (e.g. insurance/legal docs) come
+# through as literal replacement-character boxes otherwise.
+_UNDECODABLE_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f�]")
+_EXTRA_SPACES_RE = re.compile(r"[ \t]{2,}")
+
+
+def _clean_pdf_text(text: str) -> str:
+    text = _UNDECODABLE_CHARS_RE.sub("", text)
+    return _EXTRA_SPACES_RE.sub(" ", text)
 
 
 def load_document(path: Path) -> str:
@@ -13,7 +26,8 @@ def load_document(path: Path) -> str:
         from pypdf import PdfReader
 
         reader = PdfReader(str(path))
-        return "\n".join(page.extract_text() or "" for page in reader.pages)
+        text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        return _clean_pdf_text(text)
 
     if suffix in (".txt", ".md"):
         return path.read_text(encoding="utf-8")
@@ -42,7 +56,8 @@ def load_document_bytes(filename: str, data: bytes) -> str:
         from pypdf import PdfReader
 
         reader = PdfReader(io.BytesIO(data))
-        return "\n".join(page.extract_text() or "" for page in reader.pages)
+        text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        return _clean_pdf_text(text)
 
     if suffix in (".txt", ".md"):
         return data.decode("utf-8", errors="replace")
