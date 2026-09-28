@@ -127,7 +127,7 @@ with tab_ask:
         st.info("Upload at least one document in the sidebar to ask questions.")
     else:
         st.caption(f"Querying: {source_label} ({len(active_store)} chunks)")
-        top_k = st.slider("How many chunks to retrieve (top-k)", min_value=1, max_value=5, value=3)
+        top_k = st.slider("How many chunks to retrieve (top-k)", min_value=1, max_value=8, value=5)
         question = st.text_input("Your question", placeholder="How many days of PTO do I get?")
 
         if st.button("Ask", type="primary") and question.strip():

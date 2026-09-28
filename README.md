@@ -170,6 +170,21 @@ immune to short, keyword-heavy technical questions on a small corpus.
 Precision@3 is capped at 0.33 by construction: each document is a single
 chunk, so 1 correct chunk out of top-3 retrieved is the ceiling.
 
+**A third failure mode, found testing against real-world uploaded PDFs
+(legal/insurance forms, not the sample corpus):** TF-IDF can rank a
+document's actual answer *below* other chunks that repeat the same
+keyword as boilerplate. A multi-page proposal form that asks the same
+"Name of the Proposer" signature-block label in several unrelated
+sections (translator declaration, intermediary declaration, etc.) will
+often outrank the one chunk that actually has the label *and* the filled-
+in value next to it — because bag-of-words scoring can't distinguish "this
+word appears near the answer" from "this word appears as a repeated
+template label with no answer nearby." The correct chunk was still
+retrievable, just ranked 4th instead of 1st-3rd — which is why the UI and
+CLI's default top-k was raised from 3 to 5, as a partial mitigation. A
+real fix would need hybrid retrieval with a re-ranker, not just a bigger
+top-k; see Possible extensions.
+
 ## Project layout
 
 ```

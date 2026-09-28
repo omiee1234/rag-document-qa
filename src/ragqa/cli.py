@@ -23,11 +23,15 @@ def main() -> None:
     p_query = sub.add_parser("query", help="Ask a single question against an index")
     p_query.add_argument("question")
     p_query.add_argument("--index", default="index.pkl")
-    p_query.add_argument("--top-k", type=int, default=3)
+    p_query.add_argument("--top-k", type=int, default=5)
 
     p_eval = sub.add_parser("evaluate", help="Score retrieval + faithfulness against a labeled QA set")
     p_eval.add_argument("--qa-set", required=True)
     p_eval.add_argument("--index", default="index.pkl")
+    # kept at 3 (not bumped to match `query`'s new default of 5): this is the
+    # documented, measured default -- the README's Recall@3/Precision@3/MRR
+    # numbers are specifically "at top-k=3" and would silently go stale if
+    # this changed without re-running and updating them.
     p_eval.add_argument("--top-k", type=int, default=3)
     p_eval.add_argument("--quiet", action="store_true", help="Hide per-question detail")
 
