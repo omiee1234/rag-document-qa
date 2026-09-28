@@ -45,6 +45,13 @@ def chunk_text(doc_id: str, text: str, chunk_size: int = 800, overlap: int = 150
         if end >= n:
             break
         start = max(end - overlap, start + 1)  # always make forward progress
+        # snap forward to the next word boundary so the *next* chunk doesn't
+        # start mid-word (end is already snapped to whitespace above, but
+        # that only protects the end of THIS chunk, not the start of the
+        # next one -- without this, overlap could land inside a word, e.g.
+        # a chunk starting with "licable" instead of "applicable")
+        while start < n and not text[start - 1].isspace():
+            start += 1
 
     return chunks
 

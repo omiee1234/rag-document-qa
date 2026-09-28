@@ -21,3 +21,23 @@ def test_long_text_produces_overlapping_chunks():
 
 def test_empty_text_produces_no_chunks():
     assert chunk_text("doc1", "   ") == []
+
+
+def test_chunks_never_start_mid_word():
+    # Regression test: found on a real uploaded PDF where a chunk started
+    # with "licable" (the tail of "applicable") because the overlap window
+    # landed inside a word. end_char is already snapped to whitespace;
+    # start_char must be too.
+    text = (
+        "This clause is applicable on new individual health insurance "
+        "policies and not on renewals or at the time of porting or "
+        "migrating the policy to another insurer under this agreement. "
+    ) * 20
+    chunks = chunk_text("doc1", text, chunk_size=200, overlap=50)
+    assert len(chunks) > 1
+
+    for chunk in chunks[1:]:  # first chunk always starts at 0, trivially fine
+        preceding_char = text[chunk.start_char - 1]
+        assert preceding_char.isspace(), (
+            f"chunk {chunk.chunk_id!r} starts mid-word: {chunk.text[:30]!r}"
+        )
