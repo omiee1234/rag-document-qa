@@ -6,6 +6,7 @@ extractive fallback in generate.py unless OPENAI_API_KEY is set).
 """
 
 import hashlib
+import os
 import re
 import sys
 from pathlib import Path
@@ -14,11 +15,42 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+
+def _ragqa_modules() -> dict:
+    return {
+        name: module
+        for name, module in sys.modules.items()
+        if (name == "ragqa" or name.startswith("ragqa.")) and getattr(module, "__file__", None)
+    }
+
+
+def _drop_stale_ragqa_modules() -> None:
+    """Streamlit Cloud applies a git push by re-running this script in the
+    same Python process, so previously imported ragqa modules stay cached at
+    their old version. Seen in production: importing a newly added function
+    from an already-loaded module failed with ImportError. If any ragqa
+    source file changed since it was loaded, drop *all* ragqa modules --
+    dropping only the changed one would leave unchanged modules still
+    holding references into its old version."""
+    modules = _ragqa_modules()
+    for module in modules.values():
+        path = module.__file__
+        if not os.path.exists(path) or getattr(module, "_loaded_mtime", None) != os.path.getmtime(path):
+            for name in modules:
+                del sys.modules[name]
+            return
+
+
+_drop_stale_ragqa_modules()
+
 from ragqa.generate import LOW_CONFIDENCE_THRESHOLD, answer_question
 from ragqa.health import HealthReport, retrieval_health
 from ragqa.ingest import build_index_from_documents
 from ragqa.loaders import load_structured_bytes
 from ragqa.retrieve import retrieve, search_index
+
+for _module in _ragqa_modules().values():
+    _module._loaded_mtime = os.path.getmtime(_module.__file__)
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_DOCS = ROOT / "data" / "docs"
@@ -91,11 +123,14 @@ def show_verbatim(text: str) -> None:
 
 
 def source_label_for(entry) -> str:
-    parts = [p for p in (entry.title, entry.section) if p]
+    # getattr: a session can still hold entries built by an older version of
+    # the app (see _drop_stale_ragqa_modules), which lack these fields
+    title, section, page = (getattr(entry, f, None) for f in ("title", "section", "page"))
+    parts = [p for p in (title, section) if p]
     if len(parts) == 2 and parts[0] == parts[1]:
         parts = parts[:1]
     where = " › ".join(parts) or entry.doc_id
-    return f"{where} · page {entry.page}" if entry.page else where
+    return f"{where} · page {page}" if page else where
 
 
 def show_health(report: HealthReport | None) -> None:
