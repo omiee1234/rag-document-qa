@@ -244,6 +244,64 @@ def _inside(line: dict, bbox: tuple) -> bool:
     return top <= mid <= bottom and line["x0"] < x1 and line["x1"] > x0
 
 
+# Some PDFs store no space characters at all, so spaces are inferred from the
+# gap between glyphs. pdfplumber's default is an absolute 3pt gap, which on
+# one real PDF glued whole sentences together ("Createvalueforstakeholders"):
+# its letters sat ~0.00 x font size apart and its word gaps >= 0.19 x font
+# size, i.e. ~2.3pt at 12pt -- under 3pt. A gap relative to the font size
+# sits cleanly between the two. PDFs that do store spaces are unaffected.
+_X_TOLERANCE_RATIO = 0.15
+# Glyphs from different fonts overlapping by more than this fraction of a
+# glyph's width are separate text boxes drawn over each other, not a bold
+# word inside a sentence (those sit next to each other).
+_OVERLAP_FRACTION = 0.3
+_MIN_COLLISIONS = 3
+
+
+def _text_from_chars(chars: list[dict]) -> str:
+    chars = sorted(chars, key=lambda c: c["x0"])
+    out = []
+    for prev, c in zip([None] + chars, chars):
+        if prev is not None and c["x0"] - prev["x1"] > _X_TOLERANCE_RATIO * prev["size"]:
+            out.append(" ")
+        out.append(c["text"])
+    return "".join(out)
+
+
+def _split_overlapping_fonts(line: dict) -> list[dict]:
+    """Seen in a real PDF: a bold "VISION" heading drawn on top of the body
+    text beside it, or three differently-fonted phrases on one line, which
+    extraction interleaved letter by letter ("VISSTIoOeNnhance ..."). If
+    glyphs of different fonts physically overlap, split the line into one
+    line per font."""
+    chars = sorted(line.get("chars", []), key=lambda c: c["x0"])
+    collisions = sum(
+        1
+        for a, b in zip(chars, chars[1:])
+        if a["fontname"] != b["fontname"]
+        and a["x1"] - b["x0"] > _OVERLAP_FRACTION * max(a["x1"] - a["x0"], 1e-6)
+    )
+    if collisions < _MIN_COLLISIONS:
+        return [line]
+
+    by_font: dict[str, list[dict]] = {}
+    for c in chars:
+        by_font.setdefault(c["fontname"], []).append(c)
+    parts = []
+    for group in by_font.values():
+        parts.append(
+            {
+                "text": _text_from_chars(group),
+                "chars": group,
+                "x0": min(c["x0"] for c in group),
+                "x1": max(c["x1"] for c in group),
+                "top": min(c["top"] for c in group),
+                "bottom": max(c["bottom"] for c in group),
+            }
+        )
+    return sorted(parts, key=lambda p: p["x0"])
+
+
 def _parse_pdf(doc_id: str, source) -> StructuredDoc:
     """source: a filesystem path string or a binary file-like object."""
     import pdfplumber
@@ -255,11 +313,12 @@ def _parse_pdf(doc_id: str, source) -> StructuredDoc:
                 tables = page.find_tables()
             except Exception:  # malformed table geometry shouldn't sink the whole document
                 tables = []
-            table_items = [(t.bbox, t.extract()) for t in tables]
+            table_items = [(t.bbox, t.extract(x_tolerance_ratio=_X_TOLERANCE_RATIO)) for t in tables]
             lines = [
-                line
-                for line in page.extract_text_lines(return_chars=True)
+                part
+                for line in page.extract_text_lines(return_chars=True, x_tolerance_ratio=_X_TOLERANCE_RATIO)
                 if not any(_inside(line, bbox) for bbox, _ in table_items)
+                for part in _split_overlapping_fonts(line)
             ]
             pages.append((number, lines, table_items))
 

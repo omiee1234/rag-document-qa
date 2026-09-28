@@ -6,8 +6,8 @@ extractive fallback in generate.py unless OPENAI_API_KEY is set).
 """
 
 import hashlib
+import html
 import os
-import re
 import sys
 from pathlib import Path
 
@@ -48,6 +48,7 @@ from ragqa.health import HealthReport, retrieval_health
 from ragqa.hybrid import hybrid_available
 from ragqa.ingest import build_index_from_documents
 from ragqa.loaders import load_structured_bytes
+from ragqa.present import CONFIDENCE_BADGES, confidence_level, key_sentences, to_markdown
 from ragqa.retrieve import load_index, search_index
 
 for _module in _ragqa_modules().values():
@@ -131,16 +132,6 @@ def build_uploaded_index(files, mode: str) -> tuple:
             seen[doc_id] = 0
         documents.append(load_structured_bytes(f.name, f.getvalue(), doc_id=doc_id))
     return build_index_from_documents(documents, embedder_name=mode)
-
-
-_MARKDOWN_SPECIAL_RE = re.compile(r"([\\`*_{}\[\]()#+\-.!|>~<])")
-
-
-def show_verbatim(text: str) -> None:
-    """Render source text as-is: markdown characters escaped (a PDF's
-    "*2800...*" or "# Title" shouldn't turn into italics/headings), line
-    breaks preserved, still word-wrapped."""
-    st.markdown(_MARKDOWN_SPECIAL_RE.sub(r"\\\1", text).replace("\n", "  \n"))
 
 
 def source_label_for(entry) -> str:
@@ -264,25 +255,40 @@ with tab_ask:
                 retrieved = search_index(active_embedder, active_store, question, top_k=top_k)
                 answer, citations = answer_question(question, retrieved)
 
-            top_score = retrieved[0][1] if retrieved else 0.0
-            if top_score < low_confidence_threshold(active_embedder):
-                st.warning(
-                    f"⚠️ Low-confidence match (top score: {top_score:.3f}). "
-                    "The selected document(s) may not actually contain a good "
-                    "answer to this question -- treat the text below as the "
-                    "closest match found, not a reliable answer."
-                )
+            if not retrieved:
+                st.info("Nothing in the selected documents matched this question.")
+            else:
+                top_entry, top_score = retrieved[0]
+                icon, label = CONFIDENCE_BADGES[confidence_level(active_embedder, top_score)]
 
-            st.subheader("Answer")
-            if retrieved:
-                st.caption(f"📍 {source_label_for(retrieved[0][0])}")
-            show_verbatim(answer)
+                with st.container(border=True):
+                    left, right = st.columns([1, 2])
+                    left.markdown(f"{icon} **{label}**")
+                    right.markdown(
+                        f"<div style='text-align:right; opacity:0.75'>📄 "
+                        f"{html.escape(source_label_for(top_entry))}</div>",
+                        unsafe_allow_html=True,
+                    )
+                    if top_score < low_confidence_threshold(active_embedder):
+                        st.caption(
+                            "The documents may not contain an answer to this — "
+                            "this is the closest passage found, not a reliable answer."
+                        )
+                    if answer == top_entry.text:  # extractive: show the key sentences
+                        with st.spinner("Picking the key sentences..."):
+                            key = key_sentences(question, top_entry.text, active_embedder)
+                    else:  # an LLM-written answer (only if OPENAI_API_KEY is set)
+                        key = answer
+                    st.markdown(f"> {to_markdown(key, question)}".replace("\n", "\n> "))
+                    with st.expander("Show full section"):
+                        st.markdown(to_markdown(top_entry.text, question))
 
-            st.subheader("Cited chunks")
-            for entry, score in retrieved:
-                with st.expander(f"{source_label_for(entry)}  (score: {score:.3f})"):
-                    st.caption(entry.chunk_id)
-                    show_verbatim(entry.text)
+                st.markdown("**Sources**")
+                for rank, (entry, score) in enumerate(retrieved, 1):
+                    badge = CONFIDENCE_BADGES[confidence_level(active_embedder, score)][0]
+                    with st.expander(f"{badge} {rank}. {source_label_for(entry)}"):
+                        st.markdown(to_markdown(entry.text, question))
+                        st.caption(f"{entry.chunk_id} · score {score:.3f}")
 
 with tab_eval:
     st.write(

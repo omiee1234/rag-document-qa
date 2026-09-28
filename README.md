@@ -48,6 +48,15 @@ StructuredDoc(doc_id, title, blocks=[
   layouts. Headings are detected by **boldness**, not font size (body text
   in one real PDF ranged from 8pt to 12pt between sections). Bold numbered
   list items, labels and wrapped fragments are rejected as headings.
+- **Spacing**: some PDFs store no space characters, so word breaks are
+  inferred from glyph gaps. The library default (an absolute 3pt gap)
+  glued a real HR policy into "Createvalueforstakeholders"; its letters
+  sat ~0.00x the font size apart and its word gaps ≥ 0.19x, so a gap
+  relative to font size (0.15x) is used instead. Glued words in that PDF
+  went from 196 to 0, with no change on PDFs that do store spaces. Text
+  boxes drawn over each other in different fonts (a bold "VISION" heading
+  over body text) are split back into separate lines instead of being
+  interleaved letter by letter.
 - **Markdown/text**: `#` lines are headings, blank lines separate
   paragraphs, the first `#` heading is the title.
 - **Chunking** (`chunking.py`): blocks are packed into chunks that never
@@ -174,8 +183,14 @@ streamlit run src/ragqa/ui.py
 # opens at http://localhost:8501
 ```
 
-**Ask a question** — a question box, the grounded answer, and expandable
-cited chunks with their similarity scores:
+**Ask a question** — each answer is a card with:
+- a confidence badge (🟢 high / 🟡 medium / 🔴 low, on each retriever's own
+  score scale) instead of a raw number;
+- the source: document › section · page;
+- the 1-2 key sentences that answer the question, picked by the re-ranker
+  and shown verbatim with the question's words in bold (the full section is
+  one click away, so the answer stays checkable);
+- a compact numbered list of the other sources.
 
 ![Ask a question tab](docs/screenshots/ask.png)
 

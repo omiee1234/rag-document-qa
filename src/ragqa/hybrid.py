@@ -117,6 +117,11 @@ class HybridEmbedder(Embedder):
     def embed(self, texts: list[str]) -> np.ndarray:
         return np.array(list(_dense_model().embed(list(texts))))
 
+    def score_passages(self, query: str, passages: list[str]) -> list[float]:
+        """Re-ranker probability that each passage answers the query; used to
+        pick the key sentences shown as the answer."""
+        return list(_sigmoid(np.array(list(_reranker().rerank(query, passages)))))
+
     def search(
         self,
         store: InMemoryVectorStore,

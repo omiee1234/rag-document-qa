@@ -17,19 +17,21 @@ APP_URL = "http://localhost:8501"
 def main() -> None:
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        page = browser.new_page(viewport={"width": 900, "height": 700})
+        page = browser.new_page(viewport={"width": 1100, "height": 900})
         page.goto(APP_URL)
-        page.wait_for_selector("text=Ask a question", timeout=15000)
+        # first run can load the hybrid models (~1 min)
+        page.wait_for_selector("text=Document source", timeout=300000)
         page.wait_for_timeout(1000)
 
         # --- Ask a question tab ---
         question_box = page.get_by_placeholder("How many days of PTO do I get?")
         question_box.click()
-        question_box.fill("How many weeks of parental leave do I get?")
+        question_box.fill("How much vacation time do I get if I'm based in London?")
+        question_box.press("Enter")
+        page.wait_for_timeout(1500)
         page.get_by_role("button", name="Ask").click()
-        page.wait_for_selector("text=Answer", timeout=15000)
-        page.wait_for_selector("text=Cited chunks", timeout=15000)
-        page.wait_for_timeout(500)
+        page.wait_for_selector("text=Sources", timeout=120000)
+        page.wait_for_timeout(2000)
         page.screenshot(path=str(OUT_DIR / "ask.png"), full_page=True)
         print(f"Saved {OUT_DIR / 'ask.png'}")
 
@@ -37,8 +39,8 @@ def main() -> None:
         page.get_by_role("tab", name="Evaluation results").click()
         page.wait_for_timeout(500)
         page.get_by_role("button", name="Run evaluation").click()
-        page.wait_for_selector("text=Per-question detail", timeout=30000)
-        page.wait_for_timeout(500)
+        page.wait_for_selector("text=Per-question detail", timeout=600000)
+        page.wait_for_timeout(1000)
         page.screenshot(path=str(OUT_DIR / "eval.png"), full_page=True)
         print(f"Saved {OUT_DIR / 'eval.png'}")
 

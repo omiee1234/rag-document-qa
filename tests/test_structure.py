@@ -149,6 +149,48 @@ def test_label_with_long_code_is_not_a_heading():
     assert _heading_shaped("Section D.1.9")
 
 
+# --- glyph spacing / overlapping text ---------------------------------------
+
+def _glyphs(text, x, font="Body", size=12.0, advance=6.0, word_gap=2.4):
+    """Glyph boxes like a PDF with no space characters: letters touch, and
+    words are separated by a small gap (0.2 x font size, as measured)."""
+    chars = []
+    for word in text.split():
+        for ch in word:
+            chars.append({"text": ch, "x0": x, "x1": x + advance, "top": 100.0,
+                          "bottom": 112.0, "size": size, "fontname": font})
+            x += advance
+        x += word_gap
+    return chars
+
+
+def test_spaces_inferred_relative_to_font_size():
+    # Regression: an absolute 3pt tolerance glued these into one word
+    from ragqa.loaders import _text_from_chars
+
+    assert _text_from_chars(_glyphs("Create value for stakeholders", 0)) == "Create value for stakeholders"
+
+
+def test_overlapping_text_in_different_fonts_is_split_into_lines():
+    # Regression: a bold heading drawn over body text came out interleaved
+    # ("VISSTIoOeNnhance ...")
+    from ragqa.loaders import _split_overlapping_fonts
+
+    heading = _glyphs("VISION", 0, font="Cambria-Bold", advance=7.0)
+    body = _glyphs("To enhance efficiency", 2, font="Cambria")
+    line = {"text": "garbled", "chars": heading + body, "x0": 0, "x1": 200, "top": 100, "bottom": 112}
+    parts = _split_overlapping_fonts(line)
+    assert [p["text"] for p in parts] == ["VISION", "To enhance efficiency"]
+
+
+def test_bold_word_inside_a_sentence_is_not_split():
+    from ragqa.loaders import _split_overlapping_fonts
+
+    chars = _glyphs("The", 0) + _glyphs("free", 20.4, font="Body-Bold") + _glyphs("look period", 46.8)
+    line = {"text": "The free look period", "chars": chars, "x0": 0, "x1": 120, "top": 100, "bottom": 112}
+    assert _split_overlapping_fonts(line) == [line]
+
+
 # --- tokenization -----------------------------------------------------------
 
 def test_plural_and_singular_tokenize_the_same():
